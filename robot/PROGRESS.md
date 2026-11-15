@@ -222,7 +222,8 @@
   "connected, volume N%" (with "press + on the speaker" below 40%).
 - Real cause of the silence: a user service `jlab-volume-cap` (~/.local/bin/jlab-volume-cap,
   added 2026-11-14 18:54, not by the Rosey project) sets the JLab speaker to 18% on every
-  connect and caps it at 50%. Not changed yet: waiting for the user's OK to stop/raise it.
+  connect and caps it at 50%. User chose to turn it off: `systemctl --user disable --now
+  jlab-volume-cap` (script file kept; re-enable to bring the cap back). Speaker now at 100%.
   (AVRCP absolute volume was a false lead; reverted.)
 - Follow mode now backs up: person box wider than 58% of the frame -> reverse in 0.3 s bursts
   at 0.75 until below 48%; at most 6 bursts per 10 s since the camera can't see behind.
