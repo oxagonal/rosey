@@ -368,7 +368,12 @@
     if (t.camera) $("t-cam").textContent = t.camera.ok ? t.camera.fps.toFixed(0) : "no camera";
     if (t.follow) renderFollow(t.follow);
     const SPK = { ok: "connected", "no output": "no sound output", off: "not connected", starting: "starting…", disabled: "off" };
-    if (t.speaker) $("t-speaker").textContent = SPK[t.speaker] || t.speaker;
+    if (t.speaker) {
+      let txt = SPK[t.speaker] || t.speaker;
+      if (t.speaker === "ok" && t.speaker_volume != null)
+        txt = "connected, volume " + t.speaker_volume + "%" + (t.speaker_volume < 40 ? " (too low: press + on the speaker)" : "");
+      $("t-speaker").textContent = txt;
+    }
     if (t.voice) $("t-voice").textContent = t.voice === "starting" ? "starting…" : t.voice;
   }
   const FOLLOW_TEXT = {

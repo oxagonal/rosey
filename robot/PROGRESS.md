@@ -215,3 +215,8 @@
 - Website "Say" box: robot now acks right away and speaks in the background (synth + playback took
   longer than the server's 5 s timeout), and it fails with a clear error if the speaker is off or
   has no sound output, instead of reporting success silently. Result shows in the website log.
+- Still silent after that: the speaker's own volume was at 18%. The JLab speaker uses Bluetooth
+  absolute volume, so PulseAudio's sink volume IS the speaker's +/- level and the speaker ignores
+  requests to raise it (tried: it snaps back). With the voice at 60% on top, Rosey was inaudible.
+  Now: ROSEY_TTS_VOLUME=100 (agent.env), the keeper logs the speaker level and the website shows
+  "connected, volume N%" (with "press + on the speaker" below 40%).

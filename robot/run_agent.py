@@ -67,6 +67,7 @@ PINMUX_MARKER = os.environ.get("ROSEY_PINMUX_MARKER", "/run/rosey/pinmux.ok")
 _RealAgent = agent_main.RobotAgent
 
 
+
 # Speech: the Bluetooth speaker is the default output of the desktop's
 # PulseAudio. A systemd service doesn't know where that audio server is, so
 # point it there (same user, so access is allowed).
@@ -113,6 +114,8 @@ class RoseyAgent(_RealAgent):
         self.speaker_state = "starting"   # starting | ok | no output | off | disabled
         self.voice_state = "starting"     # starting | listening | restarting | off: <why>
         self.add_telemetry("speaker", lambda: self.speaker_state)
+        self.speaker_volume = None        # the speaker's own volume level (%), see _audio_keeper
+        self.add_telemetry("speaker_volume", lambda: self.speaker_volume)
         self.add_telemetry("voice", lambda: self.voice_state)
         # Load the voice model now (about 2.5 s) so the first "say" isn't delayed.
         import threading, rosey_tts
@@ -276,6 +279,18 @@ class RoseyAgent(_RealAgent):
                 if sink in sinks and default.strip() != sink:
                     await run("pactl", "set-default-sink", sink)
                     log.info("Speaker set as default output")
+                if sink in sinks:
+                    # The JLab speaker uses Bluetooth absolute volume: this PulseAudio volume
+                    # IS the speaker's own +/- button level, and the speaker ignores requests
+                    # to raise it. Report it so a low level is visible on the website (it was
+                    # at 18% once and Rosey was inaudible).
+                    _, vol = await run("pactl", "get-sink-volume", sink)
+                    pcts = [int(p) for p in re.findall(r"(\d+)%", vol)]
+                    level = min(pcts) if pcts else None
+                    if level is not None and level != self.speaker_volume:
+                        log.info("Speaker volume %d%%%s", level,
+                                 " (low: press + on the speaker)" if level < 40 else "")
+                    self.speaker_volume = level
             else:
                 self.speaker_state = "off"
             if connected != was:
