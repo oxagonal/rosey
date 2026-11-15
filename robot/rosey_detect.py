@@ -56,6 +56,10 @@ class Detector:
         so = ort.SessionOptions()
         so.intra_op_num_threads = threads        # leave CPU for speech-to-text
         so.log_severity_level = 3
+        # Don't busy-wait between runs: with the detector idle most of the time (fall watch
+        # ~2/s) spinning threads burned more than a whole CPU core for nothing.
+        so.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        so.add_session_config_entry("session.inter_op.allow_spinning", "0")
         self.sess = ort.InferenceSession(MODEL, so, providers=["CPUExecutionProvider"])
         self.input = self.sess.get_inputs()[0].name
         outs = self.sess.get_outputs()
