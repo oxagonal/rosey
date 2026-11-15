@@ -195,6 +195,23 @@
     </form>
   </section>
 
+  <section id="phone-box" class="hidden">
+    <h2>Phone alerts</h2>
+    <p class="muted" style="margin:0 0 10px">Falls and help requests are pushed to phones through the free
+      <b>ntfy</b> app, with the camera snapshot. They come from the robot itself, so they work even when this page is closed.</p>
+    <div class="row">
+      <button type="button" id="phone-setup">Show setup</button>
+      <button type="button" id="phone-test">Send test alert</button>
+    </div>
+    <ol class="muted hidden" id="phone-steps" style="margin:10px 0 0; padding-left:20px">
+      <li>Install <b>ntfy</b> from the App Store or Google Play.</li>
+      <li>Tap <b>+</b> (Subscribe to topic) and enter: <code id="phone-topic"></code></li>
+      <li>Allow notifications. On iPhone, also allow <b>Critical / Time-Sensitive</b> alerts for ntfy so falls get through Focus modes.</li>
+      <li>Tap <b>Send test alert</b> to check. On a computer you can open <a id="phone-link" target="_blank" rel="noopener"></a> instead.</li>
+      <li>Keep the topic private: anyone who has it can read Rosey's alerts.</li>
+    </ol>
+  </section>
+
   <section id="telemetry-box" class="hidden">
     <h2>Robot</h2>
     <div class="stats">
@@ -235,7 +252,7 @@
   function setPill(el, cls, text) { el.className = "pill " + cls; el.textContent = text; }
   function show(loggedIn) {
     $("login").classList.toggle("hidden", loggedIn);
-    for (const id of ["robot-status", "camera-box", "follow-box", "controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
+    for (const id of ["robot-status", "camera-box", "follow-box", "controls", "say-box", "phone-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
   }
   function ago(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
@@ -314,7 +331,15 @@
         case "telemetry": lastHeard = Date.now(); telemetry(m); renderStatus(); break;
         case "event": onEvent(m); break;
         case "command_result":
-          if (String(m.ref).startsWith("follow")) {
+          if (String(m.ref).startsWith("phone-info")) {
+            if (m.ok) {
+              $("phone-topic").textContent = m.result.topic;
+              $("phone-link").textContent = m.result.link; $("phone-link").href = m.result.link;
+              $("phone-steps").classList.remove("hidden");
+            } else log("Phone alerts: " + m.error, true);
+          } else if (String(m.ref).startsWith("phone-test")) {
+            log(m.ok && m.result.sent ? "Test alert sent to subscribed phones" : "Test alert failed: " + (m.error || "ntfy error"), !(m.ok && m.result.sent));
+          } else if (String(m.ref).startsWith("follow")) {
             if (m.ok) renderFollow({ enabled: m.result.follow }); else { log("Follow: " + m.error, true); renderFollow({ enabled: false }); }
           } else log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok);
           break;
@@ -452,6 +477,10 @@
   $("notify-on").addEventListener("click", () => {
     Notification.requestPermission().then(() => $("notify-on").classList.add("hidden"));
   });
+
+  // -- phone alerts --
+  $("phone-setup").addEventListener("click", () => send({ type: "command", ref: "phone-info-" + Date.now(), command: { type: "notify_info" } }));
+  $("phone-test").addEventListener("click", () => send({ type: "command", ref: "phone-test-" + Date.now(), command: { type: "notify_test" } }));
 
   // -- auto follow --
   function sendFollow(enabled) {

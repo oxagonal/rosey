@@ -101,6 +101,8 @@ class RoseyAgent(_RealAgent):
         self.vision_status = {}
         self._vision_proc = None
         self.register("follow", self._follow_command)
+        self.register("notify_info", self._notify_info)
+        self.register("notify_test", self._notify_test)
         self.add_telemetry("follow", lambda: dict(self.vision_status.get("follow") or {}, enabled=self.follow_enabled))
         self.add_telemetry("camera", lambda: self.vision_status.get("camera"))
         # Load the voice model now (about 2.5 s) so the first "say" isn't delayed.
@@ -187,6 +189,29 @@ class RoseyAgent(_RealAgent):
         if self.follow_enabled and not reason.startswith("dead-man"):
             self.set_follow(False, reason)
         super()._halt(reason)
+
+    # -- phone notifications (ntfy) ------------------------------------------------
+    async def send_event(self, event, **data):
+        """Report to the website as usual, and push alerts to caregivers' phones.
+        The phone push goes out even if the website connection is down."""
+        import asyncio
+        sent = await super().send_event(event, **data)
+        import rosey_notify
+        if event in rosey_notify.ALERTS:
+            asyncio.get_running_loop().run_in_executor(None, rosey_notify.notify_event, dict(data, event=event))
+        return sent
+
+    async def _notify_info(self, msg):
+        import rosey_notify
+        t = rosey_notify.topic()
+        return {"topic": t, "link": rosey_notify.subscribe_link(t), "server": rosey_notify.SERVER}
+
+    async def _notify_test(self, msg):
+        import asyncio, rosey_notify
+        status = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: rosey_notify.send("Rosey: test notification",
+                                            "Phone alerts are working. Tap to open the control page.", 3, "white_check_mark"))
+        return {"sent": status == 200}
 
     async def _audio_keeper(self):
         """Keep the Bluetooth speaker connected and set as the default output.

@@ -124,3 +124,29 @@ def test_camera_fall_stops_disables_follow_and_alerts():
     assert not a.follow_enabled and not a.motors.moving
     assert events[0][0] == "fall_detected" and events[0][1]["source"] == "camera"
     assert spoken and "caregiver" in spoken[0]
+
+
+def test_alert_events_push_to_phone(monkeypatch):
+    import rosey_notify
+    pushed = []
+    monkeypatch.setattr(rosey_notify, "notify_event", pushed.append)
+    a = make_agent(online=False)                  # offline: website can't get it, phone still must
+    async def go():
+        await a.send_event("fall_detected", source="camera", description="x")
+        await a.send_event("telemetry_note", x=1)
+        await asyncio.sleep(0.05)
+    run(go())
+    assert [p["event"] for p in pushed] == ["fall_detected"]
+
+
+def test_notify_message_and_image(monkeypatch):
+    import base64, rosey_notify
+    calls = []
+    monkeypatch.setattr(rosey_notify, "send", lambda *a, **k: calls.append(a) or 200)
+    img = "data:image/jpeg;base64," + base64.b64encode(b"JPEG").decode()
+    assert rosey_notify.notify_event({"event": "fall_detected", "source": "camera",
+                                      "description": "Person on the floor.", "image": img})
+    title, msg, prio, tags, image = calls[0]
+    assert prio == 5 and "fall" in title and "Person on the floor" in msg and image == b"JPEG"
+    assert not rosey_notify.notify_event({"event": "something_else"})
+    assert rosey_notify._ascii("it’s 41°F — ok") == "it's 41 degF - ok"

@@ -219,7 +219,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             try:
                 req = CommandRequest.model_validate(command)
                 result = await hub.request(req.model_dump())
-                await conn.send({"type": "command_result", "ref": ref, **result})
+                # The robot's reply is an ack ({"type": "ack", "id", "ok", "result"}): keep ok/result/error
+                # but make sure our own type and ref win.
+                body = {k: v for k, v in result.items() if k not in ("type", "id", "ref")}
+                await conn.send({**body, "type": "command_result", "ref": ref})
             except (ValidationError, RobotOffline, CommandTimeout) as exc:
                 await conn.send({"type": "command_result", "ref": ref, "ok": False, "error": _err(exc)})
 

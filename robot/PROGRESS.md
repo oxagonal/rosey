@@ -183,3 +183,16 @@
 - Bug: after moving code into the repo, the voice switched to espeak. Python resolves the script's
   symlinked folder, so rosey_tts looked for voices in repo/robot. Fixed with ROSEY_HOME
   (~/Desktop/rosey) for data outside git. New .py files need a symlink in ~/Desktop/rosey.
+
+## 2026-11-15 ~02:00: start at boot + phone notifications
+- Speaker keeper in run_agent: reconnects the JLab speaker within ~20 s if it drops and keeps it the
+  default output (tested: disconnected it, came back by itself).
+- `install_boot.sh` (needs sudo, user must run): `loginctl enable-linger henry` so PulseAudio (speaker
+  + mic) starts at boot without a desktop login; re-enables rosey.service; `--autologin` optional.
+  NOT yet run / not yet tested with a real reboot.
+- Phone notifications (`rosey_notify.py`, ntfy.sh): falls + help requests pushed by the robot itself
+  (works even if the website is down), urgent priority, camera snapshot attached, tap opens the site.
+  Topic is in agent.env (ROSEY_NTFY_TOPIC). Website "Phone alerts" section: setup steps + test button.
+  Test notifications (text + photo) accepted by ntfy (HTTP 200).
+- Server bug fixed: command results over /ws/control had their type overwritten by the robot's "ack",
+  so the page never saw any command result ("Say" never logged "done"). Regression test added.

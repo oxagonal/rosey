@@ -164,3 +164,22 @@ def test_settings_from_env(monkeypatch):
     monkeypatch.delenv("OPERATOR_TOKEN")
     with pytest.raises(RuntimeError, match="OPERATOR_TOKEN"):
         Settings.from_env()
+
+
+def test_control_socket_command_result_keeps_type_and_ref(client):
+    ws, robot = connect_robot(client)
+    assert json.loads(robot.receive_text())["type"] == "auth_ok"
+    with client.websocket_connect("/ws/control") as ctl:
+        ctl.send_text(json.dumps({"type": "auth", "token": OPERATOR_TOKEN}))
+        ctl.receive_text()  # auth_ok
+        ctl.send_text(json.dumps({"type": "command", "ref": "phone-info-1", "command": {"type": "notify_info"}}))
+        cmd = json.loads(robot.receive_text())
+        while cmd.get("type") != "notify_info":
+            cmd = json.loads(robot.receive_text())
+        robot.send_text(json.dumps({"type": "ack", "id": cmd["id"], "ok": True, "result": {"topic": "t"}}))
+        while True:
+            m = json.loads(ctl.receive_text())
+            if m["type"] not in ("status", "robot", "telemetry"):
+                break
+        assert m == {"type": "command_result", "ref": "phone-info-1", "ok": True, "result": {"topic": "t"}}
+    ws.__exit__(None, None, None)
