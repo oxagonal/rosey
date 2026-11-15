@@ -133,6 +133,10 @@ If the robot isn't connected you get `503`. If it doesn't answer a command withi
 
 **Live control** (`/ws/control`) is what the web page uses and suits apps that drive continuously. Send `{"type":"auth","token":"<OPERATOR_TOKEN>"}` first, then `{"type":"drive",...}` about 10 times a second while driving, plus `{"type":"stop"}` or `{"type":"command","ref":1,"command":{...}}`. The server pushes `status`, `robot`, `telemetry`, `event` and `command_result` messages. If a controller disconnects while driving, the robot is told to stop.
 
+**Live camera** (`/ws/video`): same auth message with the operator token. The server sends binary frames (4-byte big-endian header length, JSON header `{"seq","w","h","t","overlay"}`, then a JPEG). Reply `{"type":"ack"}` after drawing each frame; the server only ever sends the newest frame and at most 2 unacknowledged ones, so slow connections skip frames instead of lagging. `{"type":"preset","preset":"low"|"medium"|"high"}` changes quality for everyone (320x180 @ 8 fps, 640x360 @ 15 fps, 1280x720 @ 15 fps). The robot uploads on `/ws/robot/video` (robot token) and only while someone is watching. See `server/video.py`.
+
+**Auto follow**: `POST /api/command {"type":"follow","enabled":true,"speed":0.7}` (or the button on the page). Handled on the robot by the camera process; any manual drive or stop turns it off.
+
 ## 4. Safety design
 
 These rules matter for a robot that drives around a senior's home:

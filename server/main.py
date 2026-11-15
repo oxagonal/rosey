@@ -15,6 +15,8 @@ Endpoints (all /api/* need ``Authorization: Bearer $OPERATOR_TOKEN``):
     GET  /api/events       recent robot events (falls, etc.)
     WS   /ws/control       live control for apps/the web page (auth with the first message)
     WS   /ws/robot         the Jetson's connection (auth with the first message)
+    WS   /ws/video         live camera for viewers (operator token; see server/video.py)
+    WS   /ws/robot/video   the Jetson's camera uplink (robot token)
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from . import __version__
 from .config import Settings
 from .hub import CommandTimeout, Connection, Hub, RobotOffline
 from .protocol import CommandRequest, DriveRequest, SayRequest
+from .video import Viewer, VideoRelay
 
 log = logging.getLogger("rosey")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -47,6 +50,7 @@ def _token_ok(given: Optional[str], expected: str) -> bool:
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings.from_env()
     hub = Hub(settings)
+    video = VideoRelay()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -62,6 +66,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     app = FastAPI(title="Rosey control server", version=__version__, lifespan=lifespan)
     app.state.hub = hub
+    app.state.video = video
 
     def require_operator(authorization: Optional[str] = Header(None)) -> None:
         scheme, _, token = (authorization or "").partition(" ")
@@ -160,6 +165,46 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             pass
         finally:
             await hub.detach_robot(conn)
+
+    @app.websocket("/ws/robot/video")
+    async def robot_video_ws(ws: WebSocket) -> None:
+        if await ws_auth(ws, settings.robot_token) is None:
+            return
+        await video.attach_robot(ws)
+        try:
+            while True:
+                msg = await ws.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if msg.get("bytes"):
+                    await video.robot_frame(msg["bytes"])
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await video.detach_robot(ws)
+
+    @app.websocket("/ws/video")
+    async def video_ws(ws: WebSocket) -> None:
+        if await ws_auth(ws, settings.operator_token) is None:
+            return
+        viewer = Viewer(ws)
+        await viewer.send_text(video.status())
+        await video.add_viewer(viewer)
+        sender = asyncio.ensure_future(video.viewer_sender(viewer))
+        viewer.wake.set()
+        try:
+            while True:
+                try:
+                    msg = json.loads(await ws.receive_text())
+                except ValueError:
+                    continue
+                if isinstance(msg, dict):
+                    await video.viewer_message(viewer, msg)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            sender.cancel()
+            await video.remove_viewer(viewer)
 
     @app.websocket("/ws/control")
     async def control_ws(ws: WebSocket) -> None:

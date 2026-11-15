@@ -68,6 +68,24 @@
   li.alert { border-left: 3px solid var(--bad); }
   .muted { color: var(--muted); font-size: 13px; }
   .hidden { display: none !important; }
+  .cam { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; }
+  .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .cam .msg { position: absolute; inset: 0; display: grid; place-items: center; color: #bbb; font-size: 14px;
+              text-align: center; padding: 16px; }
+  .cam .badge { position: absolute; right: 8px; bottom: 8px; font-size: 12px; padding: 2px 8px; border-radius: 999px;
+                background: rgba(0,0,0,.55); color: #fff; font-variant-numeric: tabular-nums; }
+  .cam .badge.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                             background: #ff4d4d; margin-right: 5px; vertical-align: 1px; }
+  .cam-bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 10px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 12px; font-size: 13px; background: var(--panel); }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .follow { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+  #follow-btn { min-width: 150px; font-weight: 600; }
+  #follow-btn[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+  #follow-state b { display: block; }
+  @media (max-width: 520px) { .follow { grid-template-columns: 1fr; } #follow-btn { width: 100%; } }
   @media (max-width: 520px) {
     .drive { grid-template-columns: 1fr; justify-items: center; }
     .side { width: 100%; }
@@ -96,6 +114,35 @@
   <section id="robot-status" class="status hidden" role="status" aria-live="polite">
     <div class="dot"></div>
     <div><b id="rs-title">Checking…</b><span id="rs-detail"></span></div>
+  </section>
+
+  <section id="camera-box" class="hidden">
+    <h2>Camera</h2>
+    <div class="cam">
+      <canvas id="cam-canvas" width="640" height="360" aria-label="Live camera"></canvas>
+      <div class="msg" id="cam-msg">Connecting to the camera…</div>
+      <span class="badge hidden" id="cam-badge"></span>
+    </div>
+    <div class="cam-bar">
+      <div class="seg" role="group" aria-label="Video quality">
+        <button type="button" data-preset="low" aria-pressed="false">Low</button>
+        <button type="button" data-preset="medium" aria-pressed="true">Medium</button>
+        <button type="button" data-preset="high" aria-pressed="false">High</button>
+      </div>
+      <button id="cam-full" type="button">Full screen</button>
+    </div>
+  </section>
+
+  <section id="follow-box" class="hidden">
+    <h2>Auto follow</h2>
+    <div class="follow">
+      <button id="follow-btn" type="button" aria-pressed="false">Start following</button>
+      <div id="follow-state"><b id="fs-title">Off</b><span class="muted" id="fs-detail">Rosey follows the closest person in front of the camera, steers around things in the way, and stops when she's close. STOP or any drive button turns it off.</span></div>
+    </div>
+    <div style="margin-top:10px">
+      <label for="follow-speed">Follow speed <span id="follow-speed-val">70%</span></label>
+      <input id="follow-speed" type="range" min="40" max="100" step="5" value="70">
+    </div>
   </section>
 
   <section id="controls" class="hidden">
@@ -139,6 +186,7 @@
       <div class="stat"><b id="t-temp">–</b><span>CPU temp</span></div>
       <div class="stat"><b id="t-uptime">–</b><span>Agent uptime</span></div>
       <div class="stat"><b id="t-seen">–</b><span>Last update</span></div>
+      <div class="stat"><b id="t-cam">–</b><span>Camera fps</span></div>
     </div>
   </section>
 
@@ -171,7 +219,7 @@
   function setPill(el, cls, text) { el.className = "pill " + cls; el.textContent = text; }
   function show(loggedIn) {
     $("login").classList.toggle("hidden", loggedIn);
-    for (const id of ["robot-status", "controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
+    for (const id of ["robot-status", "camera-box", "follow-box", "controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
   }
   function ago(ms) {
     const s = Math.max(0, Math.round(ms / 1000));
@@ -208,6 +256,7 @@
     const locked = !canDrive();
     $("dpad").classList.toggle("locked", locked);
     $("say-form").classList.toggle("locked", locked);
+    $("follow-btn").classList.toggle("locked", locked || motorsReady === false);
     $("drive-help").classList.toggle("hidden", locked);
     $("drive-locked").classList.toggle("hidden", !locked);
     document.title = (cls === "ok" ? "● " : cls === "warn" ? "◐ " : "○ ") + "Rosey Control";
@@ -238,16 +287,21 @@
           if (m.last_seen_s_ago != null) lastHeard = lastSeen = now - m.last_seen_s_ago * 1000;
           if (robotOnline && m.connected_for_s != null) connectedAt = now - m.connected_for_s * 1000;
           if (m.telemetry) telemetry(m.telemetry);
+          if (!robotOnline) renderFollow({ enabled: false });
           renderStatus(); break;
         }
         case "robot":
           if (m.online) { robotOnline = true; robotInfo = m.robot; connectedAt = lastHeard = Date.now(); }
-          else { robotOnline = false; motorsReady = null; lastSeen = Date.now(); releaseAll(); }
+          else { robotOnline = false; motorsReady = null; lastSeen = Date.now(); releaseAll(); renderFollow({ enabled: false }); }
           log(m.online ? "Jetson connected" : "Jetson disconnected", !m.online);
           renderStatus(); break;
         case "telemetry": lastHeard = Date.now(); telemetry(m); renderStatus(); break;
         case "event": log("EVENT: " + m.event + (m.detail ? " – " + JSON.stringify(m.detail) : ""), true); break;
-        case "command_result": log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok); break;
+        case "command_result":
+          if (String(m.ref).startsWith("follow")) {
+            if (m.ok) renderFollow({ enabled: m.result.follow }); else { log("Follow: " + m.error, true); renderFollow({ enabled: false }); }
+          } else log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok);
+          break;
         case "error": if (m.error !== "robot offline") log("Error: " + m.error, true); break;  // the status card covers offline
       }
     };
@@ -266,6 +320,27 @@
     if (t.motors) $("t-motors").textContent = fmt(t.motors.left) + " / " + fmt(t.motors.right);
     $("t-temp").textContent = t.cpu_temp_c != null ? t.cpu_temp_c.toFixed(0) + " °C" : "–";
     $("t-uptime").textContent = t.uptime_s != null ? dur(t.uptime_s) : "–";
+    if (t.camera) $("t-cam").textContent = t.camera.ok ? t.camera.fps.toFixed(0) : "no camera";
+    if (t.follow) renderFollow(t.follow);
+  }
+  const FOLLOW_TEXT = {
+    off: "Off", starting: "Starting…", searching: "Looking for a person", following: "Following",
+    arrived: "Close enough, waiting", lost: "Lost them, waiting", blocked: "Something in the way",
+    stuck: "Seems stuck, pausing", "no camera": "No camera",
+  };
+  const FOLLOW_HELP = "Rosey follows the closest person in front of the camera, steers around things in the way, and stops when she's close. STOP or any drive button turns it off.";
+  let following = false;
+  function renderFollow(f) {
+    following = !!f.enabled;
+    const b = $("follow-btn");
+    b.setAttribute("aria-pressed", following);
+    b.textContent = following ? "Stop following" : "Start following";
+    const st = following ? (f.state || "starting") : "off";
+    $("fs-title").textContent = FOLLOW_TEXT[st] || st;
+    $("fs-detail").textContent = following
+      ? [f.detail && f.detail.toLowerCase() !== (FOLLOW_TEXT[st] || "").toLowerCase() ? f.detail : "",
+         f.detect_fps ? f.detect_fps.toFixed(0) + " checks/s" : ""].filter(Boolean).join(" · ")
+      : FOLLOW_HELP;
   }
   const fmt = (v) => (v == null ? "–" : (v >= 0 ? "+" : "") + v.toFixed(2));
   const dur = (s) => s < 120 ? Math.round(s) + " s" : s < 7200 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
@@ -320,6 +395,7 @@
   $("login-form").addEventListener("submit", (e) => {
     e.preventDefault();
     token = $("token").value.trim(); store.set(token); $("token").value = "";
+    if (!vws) setTimeout(videoConnect, 500);
     if (ws && ws.readyState <= 1) ws.close(); else connect();
   });
   $("say-form").addEventListener("submit", (e) => {
@@ -330,7 +406,112 @@
     log("Saying: " + text); $("say-text").value = "";
   });
 
+  // -- auto follow --
+  function sendFollow(enabled) {
+    send({ type: "command", ref: "follow-" + Date.now(),
+           command: { type: "follow", enabled, speed: $("follow-speed").value / 100 } });
+  }
+  $("follow-btn").addEventListener("click", () => {
+    if (!canDrive()) return;
+    const enabled = !following;
+    if (enabled) { held.clear(); clearInterval(driveTimer); driveTimer = null; }
+    sendFollow(enabled);
+    log(enabled ? "Follow mode on" : "Follow mode off");
+    $("fs-title").textContent = enabled ? "Starting…" : "Off";
+  });
+  $("follow-speed").addEventListener("input", () => { $("follow-speed-val").textContent = $("follow-speed").value + "%"; });
+  $("follow-speed").addEventListener("change", () => { if (following) sendFollow(true); });
+
+  // -- live camera: newest frame only, ack after drawing (the server never queues) --
+  const cv = $("cam-canvas"), ctx = cv.getContext("2d");
+  let vws = null, vBackoff = 1000, vFrames = 0, vBytes = 0, vLastFrame = 0, vRobot = false;
+  const presetKey = "rosey-video-preset";
+  const myPreset = () => { try { return localStorage.getItem(presetKey) || "medium"; } catch { return "medium"; } };
+  function setPreset(p, tell) {
+    document.querySelectorAll("[data-preset]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.preset === p));
+    if (tell) {
+      try { localStorage.setItem(presetKey, p); } catch {}
+      if (vws && vws.readyState === 1) vws.send(JSON.stringify({ type: "preset", preset: p }));
+    }
+  }
+  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => setPreset(b.dataset.preset, true)));
+  $("cam-full").addEventListener("click", () => {
+    const el = cv.parentElement;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  });
+  function camMsg(text) { $("cam-msg").textContent = text; $("cam-msg").classList.toggle("hidden", !text); }
+  function drawOverlay(o, w, h) {
+    if (!o) return;
+    const lw = Math.max(2, w / 320);
+    ctx.lineWidth = lw; ctx.font = Math.round(13 * w / 640) + "px system-ui, sans-serif";
+    ctx.strokeStyle = "#ffb020"; ctx.setLineDash([6 * lw, 4 * lw]);
+    for (const b of o.obstacles || []) ctx.strokeRect(b[0] * w, b[1] * h, (b[2] - b[0]) * w, (b[3] - b[1]) * h);
+    ctx.setLineDash([]);
+    if (o.target) {
+      const [x1, y1, x2, y2] = o.target;
+      ctx.strokeStyle = ctx.fillStyle = "#3ddc84";
+      ctx.strokeRect(x1 * w, y1 * h, (x2 - x1) * w, (y2 - y1) * h);
+      ctx.fillText("following", x1 * w + 6, Math.max(16, y1 * h + 18));
+    }
+  }
+  async function onFrame(buf) {
+    const n = new DataView(buf).getUint32(0);
+    let head = {};
+    try { head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n))); } catch {}
+    try {
+      // createImageBitmap decodes off the main thread; nothing piles up because we ack only after drawing.
+      const bmp = await createImageBitmap(new Blob([new Uint8Array(buf, 4 + n)], { type: "image/jpeg" }));
+      if (cv.width !== bmp.width || cv.height !== bmp.height) { cv.width = bmp.width; cv.height = bmp.height; }
+      ctx.drawImage(bmp, 0, 0);
+      if (bmp.close) bmp.close();
+      drawOverlay(head.overlay, cv.width, cv.height);
+      camMsg(""); vFrames++; vBytes += buf.byteLength; vLastFrame = Date.now();
+    } catch {}
+    if (vws && vws.readyState === 1) vws.send('{"type":"ack"}');
+  }
+  function videoConnect() {
+    if (!token || document.hidden || vws) return;
+    const sock = vws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/video");
+    sock.binaryType = "arraybuffer";
+    sock.onopen = () => sock.send(JSON.stringify({ type: "auth", token }));
+    sock.onmessage = (e) => {
+      if (typeof e.data !== "string") { onFrame(e.data); return; }
+      const m = JSON.parse(e.data);
+      if (m.type === "auth_ok") {
+        vBackoff = 1000;
+        if (myPreset() !== "medium") setPreset(myPreset(), true);
+      } else if (m.type === "video_status") {
+        vRobot = m.robot;
+        if (!m.robot) { camMsg("Camera offline: the Jetson's camera isn't connected."); $("cam-badge").classList.add("hidden"); vLastFrame = 0; }
+        else if (!vLastFrame) camMsg("Starting the camera…");
+        setPreset(m.preset, false);
+      }
+    };
+    sock.onclose = () => {
+      if (vws === sock) vws = null;
+      if (token && !document.hidden) { setTimeout(videoConnect, vBackoff); vBackoff = Math.min(vBackoff * 2, 15000); }
+    };
+  }
+  setInterval(() => {
+    const badge = $("cam-badge");
+    if (vLastFrame && Date.now() - vLastFrame < 3000) {
+      badge.className = "badge live";
+      badge.textContent = "LIVE · " + Math.round(vFrames / 2) + " fps · " + Math.round(vBytes / 2048) + " KB/s";
+    } else if (vLastFrame && vRobot) {
+      badge.className = "badge"; badge.textContent = "paused"; camMsg("Waiting for video…");
+    }
+    vFrames = 0; vBytes = 0;
+  }, 2000);
+  // Don't spend bandwidth on a tab nobody is looking at.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (vws) { const s = vws; vws = null; s.close(); } }
+    else videoConnect();
+  });
+
   connect();
+  videoConnect();
 })();
 </script>
 </body>
