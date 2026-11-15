@@ -1,0 +1,21 @@
+# Starts Myo fall detection on boot and sends alerts to the Rosey agent (run it with --myo-udp 5006).
+# Install (from the repo's myo/ folder):
+#   sed "s|YOUR_USER|$USER|g; s|REPO_DIR|$(pwd)|g" myo-fall.service | sudo tee /etc/systemd/system/myo-fall.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now myo-fall
+#   journalctl -u myo-fall -f
+# If it can't reach Bluetooth when run as a service: sudo usermod -aG bluetooth YOUR_USER, then reboot.
+[Unit]
+Description=Myo armband fall detection
+After=bluetooth.target network-online.target
+Wants=bluetooth.target
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=REPO_DIR
+# Add --record to also save the raw motion data under recordings/ (for tuning).
+ExecStart=/usr/bin/python3 -m myo_fall run --udp 127.0.0.1:5006
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

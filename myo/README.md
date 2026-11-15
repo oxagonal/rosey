@@ -6,16 +6,22 @@ Detects falls from the Myo armband's motion sensor and sends an alert to the Jet
 
 | Part | State |
 |---|---|
-| Fall-detection logic (`myo_fall/detector.py`) | Works on **simulated** data only: 4/4 simulated falls detected, 0 false alarms in 6 everyday activities. Thresholds still need tuning on real recordings. |
-| Bluetooth client (`myo_fall/myo_ble.py`) | Written against Thalmic's published Myo protocol; **untested with a real armband** |
+| Fall-detection logic (`myo_fall/detector.py`) | 4/4 simulated falls detected, 0 false alarms in 6 simulated everyday activities. The impact trigger was checked against **real wrist falls** (see "Real-data check" below) and lowered to 2.0 g. The full detector still needs tuning on real Myo recordings. |
+| Bluetooth client (`myo_fall/myo_ble.py`) | Tested against a fake Bluetooth library (setup commands, streaming, link loss, failed setup). **Not yet run with a real armband.** |
+| Service: reconnects, frozen-stream watchdog, heartbeats, buzzing, recording (`service.py`) | Tested with a fake armband |
 | Alerts over UDP + receiver (`events.py`, `jetson_receiver.py`) | Tested |
 | Forwarding to the server | Done: `python3 -m rosey_agent --myo-udp 5006` (see `jetson/rosey_agent/myo_bridge.py`) |
+| Start on boot | `myo-fall.service` (install steps are at the top of the file) |
 
 Next steps:
 1. On the Jetson, check that `python3 -m myo_fall scan` finds the armband and `run` streams data at about 50 Hz.
 2. Record real sessions: supervised falls onto a crash mat plus normal daily activity.
 3. Replay them, tune the thresholds, and update the defaults in `FallConfig`.
-4. Add a systemd unit so it starts on boot (copy `jetson/rosey-agent.service`).
+4. Decide with the follow-me team how to share the armband's Bluetooth link (see the warning below).
+
+## Heads-up: the armband can't serve two Bluetooth connections
+
+Rosey is meant to follow the wearer by tracking the Myo's Bluetooth signal. Like most Bluetooth LE devices, the Myo is built for one connection at a time and normally stops advertising once connected. So while this service is connected, a separate tracking program can neither connect nor scan for the signal. Signal strength has to come from **this same connection**. BlueZ can report signal strength for a connected device (e.g. `btmgmt conn-info`), but this service doesn't read it yet. Plan both features together before building the tracker.
 
 ## Run it on the Jetson
 
@@ -71,9 +77,24 @@ python3 -m myo_fall replay recordings --set impact_g=3.0 --set min_supporting=1
 
 Only test falls with healthy volunteers onto crash mats, never with seniors.
 
+## Real-data check (BITS-2 wrist dataset)
+
+There are no public Myo fall recordings, so the impact trigger was checked against [BITS-2](https://doi.org/10.5281/zenodo.10013090) (CC BY 4.0, by Nandi, Anupama K.R. and Agarwal). It has 41 volunteers with a left-wrist sensor doing 8 fall types and 16 daily activities. Reproduce with `python3 tools/bits2_peaks.py` (downloads 26 MB).
+
+| Trigger (`impact_g`) | Fall files that trigger | Daily-activity files that trigger |
+|---|---|---|
+| 1.8 g | 91% | 51% |
+| **2.0 g (new default)** | **88%** | **42%** |
+| 2.5 g (old default) | 81% | 28% |
+| 3.0 g | 76% | 21% |
+
+- Most falls hit hard (4–10 g), but two fall types peak around 2.5–2.9 g, which the old 2.5 g trigger often missed. A fall that never triggers can't be detected, so the trigger was lowered to 2.0 g.
+- Many daily activities also produce big impacts (two of them exceed 5 g in almost every file). That's expected: the checks after the trigger (lying still plus 2 of 3 supporting signs) are what reject them. Their real-world rejection rate still needs measuring on recordings of the Myo itself.
+- Limits of this check: the dataset's timestamps are unusable and each file holds about five short trials back to back, so only peak impacts could be compared, not the full detector. Its sensor is on the wrist, while the Myo sits further up the forearm.
+
 ## How detection works
 
-When an impact spike happens (≥ 2.5 g), it waits 3 seconds and calls it a fall only if:
+When an impact spike happens (≥ 2.0 g), it waits 3 seconds and calls it a fall only if:
 - the wearer is **lying still** afterwards, and
 - at least **2 of 3** supporting signs are present: free fall just before the impact, fast rotation around it, or the arm ending at a very different angle to gravity.
 

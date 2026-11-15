@@ -5,3 +5,6 @@ venv/
 .env
 *.env
 .pytest_cache/
+bits2/
+recordings/
+sim_data/

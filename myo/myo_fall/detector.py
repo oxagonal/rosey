@@ -42,8 +42,11 @@ Vec3 = Tuple[float, float, float]
 class FallConfig:
     sample_rate_hz: float = 50.0
 
-    # 1. impact
-    impact_g: float = 2.5
+    # 1. impact. 2.0 g rather than 2.5 g: in the BITS-2 wrist dataset (real volunteer falls,
+    # see tools/bits2_peaks.py) the softer fall types often peak below 2.5 g, and the Myo sits
+    # further up the forearm than a wrist sensor, so hand impacts arrive softened. The checks
+    # after the trigger (stillness + supporting cues) are what reject everyday impacts.
+    impact_g: float = 2.0
     # further impacts within this long of the first one extend the same event
     max_event_s: float = 4.0
 

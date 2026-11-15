@@ -6,7 +6,7 @@ Rosey is a three-wheeled caretaking robot for seniors living alone, built on a J
 
 - `server/`: FastAPI app deployed to Render (`render.yaml`). In-memory hub that relays commands to the robot over a WebSocket the Jetson opens (`/ws/robot`). Control page at `server/static/index.html`.
 - `jetson/rosey_agent/`: runs on the robot. `agent.py` (server link, dead-man stop, command handlers), `motors.py` (L293D driver, pin map from the wiring schematic), `myo_bridge.py` (forwards Myo fall alerts).
-- `myo/`: Myo fall detection, **work in progress**: never run on real hardware, thresholds tuned on simulated data only. See `myo/README.md`.
+- `myo/`: Myo fall detection, **work in progress**: never run on real hardware. Detector tuned on simulated data; impact trigger checked against a real wrist dataset (`myo/tools/bits2_peaks.py`). See `myo/README.md`.
 - `tests/`, `myo/tests/`: `pytest` from the repo root runs everything (`pytest.ini` sets paths).
 
 ## Commands
@@ -31,4 +31,5 @@ Rosey is a three-wheeled caretaking robot for seniors living alone, built on a J
 
 - Server, agent and control page tested end to end with mock motors, including in a headless browser.
 - Motor pin logic tested against a fake GPIO module.
+- Myo Bluetooth client and fall service tested against a fake Bluetooth library and a fake armband.
 - **Not yet verified on real hardware**: Jetson GPIO/PWM output, the Myo Bluetooth connection, fall-detection accuracy.

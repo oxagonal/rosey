@@ -11,7 +11,7 @@ import asyncio
 import logging
 import signal
 import time
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from .detector import Evaluation, FallConfig, FallDetector
 from .events import UdpPublisher
@@ -28,8 +28,11 @@ LOW_BATTERY_PCT = 15
 class FallService:
     def __init__(self, publisher: UdpPublisher, config: FallConfig, backend: str = "bleak",
                  address: Optional[str] = None, tty: Optional[str] = None,
-                 record_path: Optional[str] = None, vibrate: bool = True):
+                 record_path: Optional[str] = None, vibrate: bool = True,
+                 myo_factory: Optional[Callable[[Callable[[ImuSample], None]], Any]] = None):
+        """``myo_factory(on_imu)`` replaces Bluetooth discovery (used by tests with a fake armband)."""
         self.publisher = publisher
+        self.myo_factory = myo_factory
         self.detector = FallDetector(config, on_evaluation=self._on_evaluation)
         self.backend = backend
         self.address = address
@@ -92,7 +95,10 @@ class FallService:
 
     # -- connection management ---------------------------------------------
     async def _connect_once(self) -> bool:
-        if self.backend == "pyomyo":
+        if self.myo_factory is not None:
+            self.state = "connecting"
+            self.myo = self.myo_factory(self._on_imu)
+        elif self.backend == "pyomyo":
             from .myo_pyomyo import PyomyoMyo
             self.state = "connecting"
             self.myo = PyomyoMyo(self._on_imu, tty=self.tty)
