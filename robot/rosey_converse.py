@@ -10,7 +10,7 @@ JSON line per event on stdout; run_agent.py forwards "help" lines to the website
 
 Settings (environment, e.g. in agent.env):
     ANTHROPIC_API_KEY    needed for replies (without it: --echo test mode only)
-    ROSEY_CLAUDE_MODEL   default claude-opus-5-5
+    ROSEY_REPLY_MODEL    default claude-sonnet-5-5 (fall/camera checks use ROSEY_CLAUDE_MODEL, Opus)
     ROSEY_MIC            PulseAudio source name (default: the system default mic)
     ROSEY_WAKE_WORD      1 (default) = must say "Rosey"; 0 = answer everything heard
 
@@ -66,7 +66,17 @@ WAKE_RE = re.compile(r"\b(rosey|rosie|rosy|rozy|rosi|roseanne|rose)\b", re.I)
 HELP_RE = re.compile(r"\b(help me|help|i fell|i've fallen|i have fallen|fallen|can't get up|cannot get up|"
                      r"emergency|chest pain|can't breathe|cannot breathe|call 911|ambulance|stroke)\b", re.I)
 
-MODEL = os.environ.get("ROSEY_CLAUDE_MODEL", "claude-opus-5-5")
+# Haiku has no server-side refusal fallback; the other current models do.
+def _fallback_args(model):
+    if "haiku" in model:
+        return {}
+    return {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+
+
+# Replies use a faster model than the camera/fall checks: Sonnet 5.5 starts speaking ~0.8 s
+# after the request vs ~2.0 s for Opus 5.5 (measured on the robot, 2026-11-15).
+MODEL = os.environ.get("ROSEY_REPLY_MODEL", "claude-sonnet-5-5")
+FALLBACK = _fallback_args(MODEL)
 SYSTEM = """You are Rosey, a friendly home robot that keeps an older adult who lives alone company and helps look after them. You are talking out loud: everything you write is spoken by a text-to-speech voice through a small speaker.
 
 How to talk:
@@ -329,8 +339,7 @@ class Brain:
                 system=SYSTEM,
                 messages=messages,
                 output_config={"effort": "low"},      # conversation: fast answers
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",                  # if declined, retry on a fallback model
+                **FALLBACK,                           # if declined, retry on a fallback model
             ) as stream:
                 for delta in stream.text_stream:
                     buf += delta

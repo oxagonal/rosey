@@ -243,3 +243,6 @@
 - Website "Speaker volume" slider (in Speak through Rosey): new robot command `volume`
   {level: 0-100} sets the Bluetooth sink volume and, best effort, the speaker's AVRCP volume.
   The slider follows the robot's reported level. Fall check max_tokens set to 500 (user choice).
+- Replies now use Claude Sonnet 5.5 (ROSEY_REPLY_MODEL); fall/camera checks stay on Opus 5.5
+  (ROSEY_CLAUDE_MODEL). Measured on the robot with a camera frame, effort low: first words
+  Opus 1.8-2.1 s, Sonnet 0.7-0.9 s, Haiku 0.4-1.5 s (Haiku described the photo unprompted).
