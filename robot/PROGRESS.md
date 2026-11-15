@@ -246,3 +246,9 @@
 - Replies now use Claude Sonnet 5.5 (ROSEY_REPLY_MODEL); fall/camera checks stay on Opus 5.5
   (ROSEY_CLAUDE_MODEL). Measured on the robot with a camera frame, effort low: first words
   Opus 1.8-2.1 s, Sonnet 0.7-0.9 s, Haiku 0.4-1.5 s (Haiku described the photo unprompted).
+- Volume, final setup: the JLab has two volume layers, its own amplifier (AVRCP 0-127, remembered
+  by the speaker) and the PulseAudio sink. Website slider at 15% had set both, then raising the
+  Ubuntu slider only boosted the sink. Now: the speaker keeper pins the amplifier at 127, and the
+  JLab output slider (Ubuntu or the website slider, same control) is the only volume knob.
+  AVRCP sync off in ~/.config/pulse/default.pa (copy: robot/pulse-default.pa) so PulseAudio and
+  the keeper don't fight. Over-amplification (>100%) turned back off: it only added distortion.

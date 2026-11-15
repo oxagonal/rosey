@@ -152,9 +152,9 @@ class RoseyAgent(_RealAgent):
         return {"spoken": text}
 
     async def _volume(self, msg):
-        """Website volume slider: set the Bluetooth speaker's output level (0-100%).
-        Also asks the speaker's own amplifier for the same level over Bluetooth
-        (AVRCP absolute volume, 0-127); that part is best effort."""
+        """Website volume slider: the same control as the JLab output slider in Ubuntu's
+        sound settings (0-100%). The speaker's own amplifier stays at full (see
+        _audio_keeper), so this one level is the only volume control."""
         import asyncio, logging
         level = int(round(max(0.0, min(100.0, float(msg.get("level"))))))
         mac = os.environ.get("ROSEY_SPEAKER_BT", "A0:8A:35:69:64:82").strip()
@@ -170,12 +170,6 @@ class RoseyAgent(_RealAgent):
         if rc != 0:
             raise RuntimeError("couldn't set volume: %s" % out.strip()[:200])
         await run("pactl", "set-sink-mute", sink, "0")
-        rc, tree = await run("busctl", "tree", "org.bluez", "--list")
-        dev = "/org/bluez/hci0/dev_" + mac.replace(":", "_")
-        for path in tree.split():
-            if path.startswith(dev + "/") and path.rsplit("/", 1)[-1].startswith("fd"):
-                await run("busctl", "set-property", "org.bluez", path, "org.bluez.MediaTransport1",
-                          "Volume", "q", str(round(level * 127 / 100)))
         self.speaker_volume = level
         logging.getLogger("rosey.audio").info("Speaker volume set to %d%% (website)", level)
         return {"level": level}
@@ -319,8 +313,22 @@ class RoseyAgent(_RealAgent):
                     level = min(pcts) if pcts else None
                     if level is not None and level != self.speaker_volume:
                         log.info("Speaker volume %d%%%s", level,
-                                 " (low: press + on the speaker)" if level < 40 else "")
+                                 "")
                     self.speaker_volume = level
+                    # The speaker has its own amplifier volume (AVRCP, 0-127) that it remembers
+                    # across connections (the old jlab-volume-cap left it at 18%, then a website
+                    # test at 15%). Keep it at full so the Ubuntu/website slider is the only knob.
+                    _, tree = await run("busctl", "tree", "org.bluez", "--list")
+                    dev = "/org/bluez/hci0/dev_" + mac.replace(":", "_") + "/"
+                    for path in tree.split():
+                        if path.startswith(dev) and path.rsplit("/", 1)[-1].startswith("fd"):
+                            _, amp = await run("busctl", "get-property", "org.bluez", path,
+                                               "org.bluez.MediaTransport1", "Volume")
+                            m = re.search(r"q (\d+)", amp)
+                            if m and int(m.group(1)) < 127:
+                                await run("busctl", "set-property", "org.bluez", path,
+                                          "org.bluez.MediaTransport1", "Volume", "q", "127")
+                                log.info("Speaker amplifier was %s/127; set to full", m.group(1))
             else:
                 self.speaker_state = "off"
             if connected != was:

@@ -1,0 +1,8 @@
+# Rosey: system config, but Bluetooth without AVRCP absolute volume sync. Rosey keeps the JLab
+# speaker's own amplifier at full and the JLab output slider (Ubuntu / website) is the only volume
+# control. With sync on, PulseAudio and Rosey's speaker keeper would fight over the amplifier.
+.include /etc/pulse/default.pa
+.ifexists module-bluetooth-discover.so
+unload-module module-bluetooth-discover
+load-module module-bluetooth-discover avrcp_absolute_volume=false
+.endif
