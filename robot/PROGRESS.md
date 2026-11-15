@@ -240,3 +240,6 @@
 - Speaker loudness root cause (btmon trace): the JLab supports AVRCP absolute volume and reports
   its own amplifier at 23/127 = 18%, remembered from the old jlab-volume-cap script. Setting
   MediaTransport1.Volume as henry didn't change it; waiting on a root trace of SetAbsoluteVolume.
+- Website "Speaker volume" slider (in Speak through Rosey): new robot command `volume`
+  {level: 0-100} sets the Bluetooth sink volume and, best effort, the speaker's AVRCP volume.
+  The slider follows the robot's reported level. Fall check max_tokens set to 500 (user choice).

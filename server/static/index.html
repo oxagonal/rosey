@@ -193,6 +193,10 @@
       <input id="say-text" type="text" maxlength="500" placeholder="Hi! Time for your afternoon medication.">
       <button type="submit">Say</button>
     </form>
+    <div style="margin-top:10px">
+      <label for="volume">Speaker volume <span id="volume-val">–</span></label>
+      <input id="volume" type="range" min="0" max="100" step="5" value="100">
+    </div>
   </section>
 
   <section id="phone-box" class="hidden">
@@ -343,6 +347,8 @@
             log(m.ok && m.result.sent ? "Test alert sent to subscribed phones" : "Test alert failed: " + (m.error || "ntfy error"), !(m.ok && m.result.sent));
           } else if (String(m.ref).startsWith("follow")) {
             if (m.ok) renderFollow({ enabled: m.result.follow }); else { log("Follow: " + m.error, true); renderFollow({ enabled: false }); }
+          } else if (String(m.ref).startsWith("volume")) {
+            if (!m.ok) log("Volume: " + m.error, true);
           } else if (String(m.ref).startsWith("say")) {
             log(m.ok ? "Rosey is speaking" : "Say failed: " + m.error, !m.ok);
           } else log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok);
@@ -371,8 +377,13 @@
     if (t.speaker) {
       let txt = SPK[t.speaker] || t.speaker;
       if (t.speaker === "ok" && t.speaker_volume != null)
-        txt = "connected, volume " + t.speaker_volume + "%" + (t.speaker_volume < 40 ? " (too low: press + on the speaker)" : "");
+        txt = "connected, volume " + t.speaker_volume + "%" + (t.speaker_volume < 40 ? " (low)" : "");
       $("t-speaker").textContent = txt;
+    }
+    // Keep the slider in step with the robot, except while someone is dragging it.
+    if (t.speaker_volume != null && !volumeDragging && Date.now() - volumeSentAt > 3000) {
+      $("volume").value = Math.min(100, t.speaker_volume);
+      $("volume-val").textContent = t.speaker_volume + "%";
     }
     if (t.voice) $("t-voice").textContent = t.voice === "starting" ? "starting…" : t.voice;
   }
@@ -450,6 +461,13 @@
     token = $("token").value.trim(); store.set(token); $("token").value = "";
     if (!vws) setTimeout(videoConnect, 500);
     if (ws && ws.readyState <= 1) ws.close(); else connect();
+  });
+  let volumeDragging = false, volumeSentAt = 0;
+  $("volume").addEventListener("input", () => { volumeDragging = true; $("volume-val").textContent = $("volume").value + "%"; });
+  $("volume").addEventListener("change", () => {
+    volumeDragging = false; volumeSentAt = Date.now();
+    send({ type: "command", ref: "volume-" + Date.now(), command: { type: "volume", level: Number($("volume").value) } });
+    log("Speaker volume " + $("volume").value + "%");
   });
   $("say-form").addEventListener("submit", (e) => {
     e.preventDefault();

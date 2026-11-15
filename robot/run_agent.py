@@ -100,6 +100,7 @@ class RoseyAgent(_RealAgent):
         super().__init__(*a, **kw)
         self.add_telemetry("motors_ready", lambda: os.path.exists(PINMUX_MARKER))
         self.register("say", self._say)
+        self.register("volume", self._volume)
         # Camera + follow mode (rosey_vision.py child process).
         self.follow_enabled = False
         self.follow_speed = 0.5   # felt best in the 2026-11-15 floor test
@@ -149,6 +150,35 @@ class RoseyAgent(_RealAgent):
             raise RuntimeError("speaker is connected but has no sound output")
         speak_in_background(text)
         return {"spoken": text}
+
+    async def _volume(self, msg):
+        """Website volume slider: set the Bluetooth speaker's output level (0-100%).
+        Also asks the speaker's own amplifier for the same level over Bluetooth
+        (AVRCP absolute volume, 0-127); that part is best effort."""
+        import asyncio, logging
+        level = int(round(max(0.0, min(100.0, float(msg.get("level"))))))
+        mac = os.environ.get("ROSEY_SPEAKER_BT", "A0:8A:35:69:64:82").strip()
+        sink = "bluez_sink.%s.a2dp_sink" % mac.replace(":", "_")
+
+        async def run(*cmd):
+            p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                     stderr=asyncio.subprocess.STDOUT)
+            out, _ = await asyncio.wait_for(p.communicate(), 10)
+            return p.returncode, out.decode(errors="replace")
+
+        rc, out = await run("pactl", "set-sink-volume", sink, "%d%%" % level)
+        if rc != 0:
+            raise RuntimeError("couldn't set volume: %s" % out.strip()[:200])
+        await run("pactl", "set-sink-mute", sink, "0")
+        rc, tree = await run("busctl", "tree", "org.bluez", "--list")
+        dev = "/org/bluez/hci0/dev_" + mac.replace(":", "_")
+        for path in tree.split():
+            if path.startswith(dev + "/") and path.rsplit("/", 1)[-1].startswith("fd"):
+                await run("busctl", "set-property", "org.bluez", path, "org.bluez.MediaTransport1",
+                          "Volume", "q", str(round(level * 127 / 100)))
+        self.speaker_volume = level
+        logging.getLogger("rosey.audio").info("Speaker volume set to %d%% (website)", level)
+        return {"level": level}
 
     # -- follow mode ---------------------------------------------------------------
     # Safety: follow drive commands from the vision process reach the wheels only
