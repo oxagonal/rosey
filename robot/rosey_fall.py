@@ -97,7 +97,7 @@ class FallWatch:
             import anthropic
             self._client = anthropic.Anthropic(max_retries=1, timeout=20.0)
         msg = self._client.messages.create(
-            model=self.model, max_tokens=1500,   # room for any thinking before the JSON (300 once left no answer)
+            model=self.model, max_tokens=500,   # room for thinking (120-200 tokens seen) before the JSON; 300 once left no answer
             messages=[{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                              "data": base64.b64encode(jpeg).decode()}},

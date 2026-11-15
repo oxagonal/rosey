@@ -235,7 +235,7 @@
   back up above 44% (was 58%) until below 35% (was 48%).
 - 04:44 alert said "couldn't double-check: ValueError": Claude's fall check returned no JSON.
   It thinks before answering (120-200 output tokens on a normal frame) and max_tokens was 300, so
-  a hard frame can run out before the verdict. Now max_tokens=1500 and failures are logged with
+  a hard frame can run out before the verdict. Now max_tokens=500 (user choice) and failures are logged with
   the stop reason and text. (The alert was still sent, marked unconfirmed, as designed.)
 - Speaker loudness root cause (btmon trace): the JLab supports AVRCP absolute volume and reports
   its own amplifier at 23/127 = 18%, remembered from the old jlab-volume-cap script. Setting
