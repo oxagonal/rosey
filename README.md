@@ -24,6 +24,8 @@ Cloud backend for controlling **Rosey**, the Jetson Orin Nano caretaking robot, 
 | `jetson/rosey-agent.service` | systemd unit so the agent starts on boot |
 | `render.yaml` | Render Blueprint: one-click deploy that also generates the secrets |
 | `tests/` | Server, motor-logic and end-to-end tests (real server + real agent + mock motors) |
+| `myo/` | Myo armband fall detection (work in progress, see [myo/README.md](myo/README.md)) |
+| `CLAUDE.md` | Project notes that Claude Code reads automatically when someone works on this repo with it |
 
 ---
 
@@ -183,7 +185,7 @@ await agent.send_event("fall_detected", source="camera", detail={"confidence": 0
 Add live values to telemetry with `agent.add_telemetry("battery_v", read_battery)`.
 
 - **Alerts to family.** Set `ALERT_WEBHOOK_URL` in Render, and every robot event is POSTed there as JSON. It can be any endpoint that accepts JSON: an [ntfy.sh](https://ntfy.sh) topic for phone push, a Zapier/Make webhook that texts emergency contacts, or your own service.
-- **Myo armband fall alerts** from the `myo-fall-detect` service: run the agent with `--myo-udp 5006` and the Myo service with `--udp 127.0.0.1:5006`. Falls are forwarded as `fall_detected` events, and the armband's battery and streaming status appear in telemetry.
+- **Myo armband fall alerts** from [`myo/`](myo/README.md): run the agent with `--myo-udp 5006` and `python3 -m myo_fall run --udp 127.0.0.1:5006`. Falls are forwarded as `fall_detected` events, and the armband's battery and streaming status appear in telemetry.
 - **Text-to-speech:** `say_handler` in `agent.py` uses espeak-ng (`sudo apt install espeak-ng`). Swap in your own voice stack.
 
 ## 7. Development

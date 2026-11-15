@@ -1,0 +1,3 @@
+# Myo fall detection. bleak drives the Jetson's Bluetooth (BlueZ); pyomyo is only for the BLED112 USB dongle.
+bleak>=0.22
+# pyomyo
