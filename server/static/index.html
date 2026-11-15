@@ -68,6 +68,13 @@
   li.alert { border-left: 3px solid var(--bad); }
   .muted { color: var(--muted); font-size: 13px; }
   .hidden { display: none !important; }
+  .alert-box { border: 2px solid var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); }
+  .alert-box h2 { color: var(--bad); font-size: 15px; }
+  .alert-item { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; }
+  .alert-item + .alert-item { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .alert-item img { width: 160px; border-radius: 8px; display: block; }
+  .alert-item b { display: block; font-size: 16px; }
+  @media (max-width: 520px) { .alert-item { grid-template-columns: 1fr; } .alert-item img { width: 100%; } }
   .cam { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; }
   .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .cam .msg { position: absolute; inset: 0; display: grid; place-items: center; color: #bbb; font-size: 14px;
@@ -109,6 +116,15 @@
       <button class="primary" type="submit">Connect</button>
     </form>
     <p class="muted" id="login-msg">Find it in the Render dashboard under your service → Environment.</p>
+  </section>
+
+  <section id="alerts" class="alert-box hidden" role="alert">
+    <h2>⚠ Needs attention</h2>
+    <div id="alert-list"></div>
+    <div class="row" style="margin-top:12px">
+      <button type="button" id="alert-dismiss">Dismiss</button>
+      <button type="button" id="notify-on" class="hidden">Turn on notifications</button>
+    </div>
   </section>
 
   <section id="robot-status" class="status hidden" role="status" aria-live="polite">
@@ -296,7 +312,7 @@
           log(m.online ? "Jetson connected" : "Jetson disconnected", !m.online);
           renderStatus(); break;
         case "telemetry": lastHeard = Date.now(); telemetry(m); renderStatus(); break;
-        case "event": log("EVENT: " + m.event + (m.detail ? " – " + JSON.stringify(m.detail) : ""), true); break;
+        case "event": onEvent(m); break;
         case "command_result":
           if (String(m.ref).startsWith("follow")) {
             if (m.ok) renderFollow({ enabled: m.result.follow }); else { log("Follow: " + m.error, true); renderFollow({ enabled: false }); }
@@ -404,6 +420,37 @@
     if (!text) return;
     send({ type: "command", ref: Date.now(), command: { type: "say", text } });
     log("Saying: " + text); $("say-text").value = "";
+  });
+
+  // -- alerts (falls, help requests) --
+  const ALERT_TITLES = { fall_detected: "Possible fall", help_requested: "Asked for help" };
+  function onEvent(m) {
+    const desc = m.description || m.text || (m.detail && JSON.stringify(m.detail)) || "";
+    log("EVENT: " + m.event + (m.source ? " (" + m.source + ")" : "") + (desc ? " – " + desc : ""), true);
+    if (!ALERT_TITLES[m.event]) return;
+    const when = new Date((m.time || m.received_at || Date.now() / 1000) * 1000).toLocaleTimeString();
+    const item = document.createElement("div");
+    item.className = "alert-item";
+    if (typeof m.image === "string" && m.image.startsWith("data:image/jpeg;base64,")) {
+      const img = document.createElement("img"); img.src = m.image; img.alt = "Camera snapshot"; item.append(img);
+    }
+    const text = document.createElement("div");
+    const b = document.createElement("b"); b.textContent = ALERT_TITLES[m.event] + " · " + when;
+    const p = document.createElement("span"); p.className = "muted";
+    p.textContent = (desc || "") + (m.source ? " (from " + (m.source === "camera" ? "the camera" : m.source) + ")" : "")
+      + (m.unconfirmed ? " Not double-checked." : "");
+    text.append(b, p); item.append(text);
+    $("alert-list").prepend(item);
+    $("alerts").classList.remove("hidden");
+    try {
+      if ("Notification" in window && Notification.permission === "granted")
+        new Notification("Rosey: " + ALERT_TITLES[m.event], { body: desc, tag: "rosey-" + m.event, requireInteraction: true });
+    } catch {}
+  }
+  $("alert-dismiss").addEventListener("click", () => { $("alert-list").textContent = ""; $("alerts").classList.add("hidden"); });
+  if ("Notification" in window && Notification.permission === "default") $("notify-on").classList.remove("hidden");
+  $("notify-on").addEventListener("click", () => {
+    Notification.requestPermission().then(() => $("notify-on").classList.add("hidden"));
   });
 
   // -- auto follow --

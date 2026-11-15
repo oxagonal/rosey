@@ -108,3 +108,19 @@ def test_disable_tells_vision_process():
     run(a._follow_command({"enabled": True, "speed": 0.5}))
     run(a._follow_command({"enabled": False}))
     assert b'"follow": false' in a._vision_proc.sent[-1]
+
+
+def test_camera_fall_stops_disables_follow_and_alerts():
+    a = make_agent()
+    run(a._follow_command({"enabled": True}))
+    a.follow_drive({"type": "drive", "left": 0.6, "right": 0.6})
+    events = []
+    async def send_event(name, **data):
+        events.append((name, data))
+    a.send_event = send_event
+    spoken = []
+    sys.modules["rosey_tts"].speak = spoken.append
+    run(a._on_camera_fall({"description": "Person lying on the floor", "confidence": 0.9, "image": "data:x"}))
+    assert not a.follow_enabled and not a.motors.moving
+    assert events[0][0] == "fall_detected" and events[0][1]["source"] == "camera"
+    assert spoken and "caregiver" in spoken[0]

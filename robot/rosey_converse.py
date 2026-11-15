@@ -37,6 +37,12 @@ import numpy as np
 import rosey_tts
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Data that isn't in git (voices/, models/whisper/, agent.env) lives in the deployment
+# folder, ~/Desktop/rosey, whose code files are symlinks into the repo. Python resolves
+# symlinks for the script's folder, so don't rely on __file__ for data.
+ROSEY_HOME = os.environ.get("ROSEY_HOME") or (
+    os.path.expanduser("~/Desktop/rosey") if os.path.isdir(os.path.expanduser("~/Desktop/rosey/voices"))
+    else os.path.dirname(os.path.abspath(__file__)))
 RATE = 16000
 FRAME = 480                       # 30 ms at 16 kHz
 FRAME_S = FRAME / RATE
@@ -72,7 +78,8 @@ How to talk:
 
 What you are and can do:
 - You are a small three-wheeled robot with a speaker, a microphone and a camera. A caregiver can drive you, watch your camera and turn on a "follow" mode from a website.
-- You can talk, listen, keep company, remind, and explain. You cannot make phone calls, control other devices, or describe what your camera sees. You cannot start or stop following by yourself; a caregiver does that from the website. Don't pretend otherwise.
+- When your camera is working, the person's message comes with a photo your camera took a moment ago, plus a note on whether you are following someone. The camera sits low, near the floor, and looks forward and slightly up, so you often see legs, furniture and ceilings, and people from below. Use the photo when it helps: if they ask what you see, how they look, what they're holding, whether something is in the way, or if what you see suggests they may be hurt (for example someone lying on the floor). Don't describe the photo when they didn't ask and nothing is wrong. If the picture is too dark, blurry or doesn't show what they ask about, say so honestly rather than guessing.
+- You can talk, listen, look, keep company, remind, and explain. You cannot make phone calls or control other devices. You cannot start or stop following by yourself; a caregiver does that from the website. Don't pretend otherwise.
 - You are not a doctor. For health questions give simple, sensible information and suggest asking their doctor or pharmacist.
 
 Safety comes first:
@@ -179,7 +186,7 @@ class Ears:
         t = time.time()
         self.model = WhisperModel(os.environ.get("ROSEY_WHISPER", "base.en"), device="cpu",
                                   compute_type="int8", cpu_threads=4,     # 4 measured faster than 6
-                                  download_root=os.path.join(HERE, "models", "whisper"))
+                                  download_root=os.path.join(ROSEY_HOME, "models", "whisper"))
         log("speech-to-text ready (%.1f s)" % (time.time() - t))
 
     def transcribe(self, audio) -> str:
@@ -251,6 +258,44 @@ def split_sentences(buf: str):
         buf = buf[m.end():]
 
 
+# -- what the camera sees (written by rosey_vision.py once a second) -------------
+CAMERA_DIR = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+CAMERA_JPG = os.path.join(CAMERA_DIR, "rosey-camera.jpg")
+CAMERA_JSON = os.path.join(CAMERA_DIR, "rosey-camera.json")
+CAMERA_MAX_AGE_S = 5.0
+FOLLOW_WORDS = {"searching": "looking for a person to follow", "following": "following a person",
+                "arrived": "next to the person you follow, waiting", "lost": "lost the person you were following",
+                "blocked": "following, but stopped because something is in the way",
+                "stuck": "following, but paused because the wheels seemed blocked"}
+
+
+def camera_content(heard: str):
+    """The user turn: the camera's latest photo (if fresh) + a status line + what they said.
+    Only the current turn carries the photo; history keeps plain text."""
+    if os.environ.get("ROSEY_VISION_CONTEXT", "1") == "0":
+        return heard
+    try:
+        with open(CAMERA_JSON) as f:
+            info = json.load(f)
+        if time.time() - float(info.get("time", 0)) > CAMERA_MAX_AGE_S:
+            raise ValueError("stale")
+        with open(CAMERA_JPG, "rb") as f:
+            jpg = f.read()
+    except (OSError, ValueError):
+        return [{"type": "text", "text": "(Your camera isn't available right now.)"},
+                {"type": "text", "text": heard}]
+    fol = info.get("follow") or {}
+    state = FOLLOW_WORDS.get(fol.get("state"), "not following anyone") if fol.get("enabled") else "not following anyone"
+    import base64
+    return [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                     "data": base64.b64encode(jpg).decode()}},
+        {"type": "text", "text": "(Photo from your camera, taken %.0f s ago. Right now you are %s.)"
+                                 % (max(0.0, time.time() - info["time"]), state)},
+        {"type": "text", "text": heard},
+    ]
+
+
 # -- the brain -----------------------------------------------------------------
 class Brain:
     def __init__(self):
@@ -270,7 +315,7 @@ class Brain:
         # The clock goes in a mid-conversation system note (operator channel) so Claude
         # can answer "what time is it?" without bringing the time up unprompted.
         messages = self.history + [
-            {"role": "user", "content": heard},
+            {"role": "user", "content": camera_content(heard)},
             {"role": "system", "content": ("Local time: %s.\n%s\nDon't mention the time, date, place or "
                                            "weather unless the person asks or it clearly matters."
                                            % (now, self.context.note())).replace("\n\n", "\n")},

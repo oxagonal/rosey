@@ -168,3 +168,18 @@
   (Open-Meteo) in the system note (`rosey_context.py`).
 - Speech volume 50 -> 60 (`ROSEY_TTS_VOLUME=60` in agent.env).
 - All robot code moved into the GitHub repo under `robot/`; ~/Desktop/rosey files are symlinks to it.
+
+## 2026-11-15 ~01:50: Rosey sees, camera fall detection, voice fix
+- Conversation: each turn now carries the camera's latest 640x360 frame (written once a second to
+  /run/user/1000/rosey-camera.jpg by rosey_vision) + follow state. Not kept in history. No added latency
+  (first sentence ~1 s with or without the image). ROSEY_VISION_CONTEXT=0 turns it off.
+- Fall detection (`rosey_fall.py`): detector runs ~2/s even when not following; a wide, low person box
+  in most checks over 3 s -> Claude confirms on the frame (~4.5 s) -> agent stops, sends
+  `fall_detected` (source camera, description, 320x180 snapshot) and Rosey says she alerted the
+  caregiver. Re-alerts at most every 2 min; a "no" suppresses re-checks for 30 s. If Claude can't be
+  reached, it alerts anyway, marked "not double-checked". NOT yet tested with a real person lying down.
+- Website: red "Needs attention" banner with snapshot for falls/help requests, browser notifications
+  while the page is open.
+- Bug: after moving code into the repo, the voice switched to espeak. Python resolves the script's
+  symlinked folder, so rosey_tts looked for voices in repo/robot. Fixed with ROSEY_HOME
+  (~/Desktop/rosey) for data outside git. New .py files need a symlink in ~/Desktop/rosey.

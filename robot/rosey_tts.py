@@ -76,7 +76,13 @@ def _espeak_pcm(text: str) -> "tuple[array.array, int]":
 
 # -- Piper: natural neural voice, used when installed (pip3 install --user piper-tts)
 # and a voice model (.onnx + .onnx.json) is in VOICES_DIR. Falls back to espeak.
-VOICES_DIR = os.environ.get("ROSEY_VOICES_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices"))
+# Data that isn't in git (voices/, models/whisper/, agent.env) lives in the deployment
+# folder, ~/Desktop/rosey, whose code files are symlinks into the repo. Python resolves
+# symlinks for the script's folder, so don't rely on __file__ for data.
+ROSEY_HOME = os.environ.get("ROSEY_HOME") or (
+    os.path.expanduser("~/Desktop/rosey") if os.path.isdir(os.path.expanduser("~/Desktop/rosey/voices"))
+    else os.path.dirname(os.path.abspath(__file__)))
+VOICES_DIR = os.environ.get("ROSEY_VOICES_DIR", os.path.join(ROSEY_HOME, "voices"))
 VOICE = os.environ.get("ROSEY_VOICE", "en_US-lessac-medium")
 _piper = None
 _piper_failed = False

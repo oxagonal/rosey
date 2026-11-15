@@ -11,6 +11,7 @@ also runs pinmux_fix.py first.
 import json, os, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("ROSEY_HOME", HERE)     # ~/Desktop/rosey (unresolved): voices, whisper model
 sys.path.insert(0, HERE)                              # motors.py
 # rosey_agent: ~/Desktop/rosey/repo/jetson when run from the Desktop folder (symlinks),
 # ../jetson when run from inside the repo (tests).
@@ -185,6 +186,24 @@ class RoseyAgent(_RealAgent):
             self.set_follow(False, reason)
         super()._halt(reason)
 
+    async def _on_camera_fall(self, msg):
+        """The camera thinks someone fell: stop moving, alert the caregiver, talk to them."""
+        import asyncio, logging
+        logging.getLogger("rosey.fall").warning("Camera fall alert: %s", msg.get("description"))
+        if self.follow_enabled:
+            self.set_follow(False, "fall detected")
+        self._halt("fall detected")
+        await self.send_event("fall_detected", source="camera", description=msg.get("description"),
+                              confidence=msg.get("confidence"), unconfirmed=msg.get("unconfirmed", False),
+                              image=msg.get("image"))
+        text = ("It looks like you may have fallen. I've sent an alert to your caregiver. "
+                "Are you okay? If you're hurt, please call 911 or press your medical alert button.")
+        try:
+            import rosey_tts
+            await asyncio.get_running_loop().run_in_executor(None, rosey_tts.speak, text)
+        except Exception as exc:
+            logging.getLogger("rosey.fall").error("Couldn't speak the fall message: %s", exc)
+
     async def _vision_supervisor(self):
         """Run rosey_vision.py (camera stream + follow detection) and relay its lines."""
         import asyncio, logging, sys
@@ -211,6 +230,8 @@ class RoseyAgent(_RealAgent):
                         self.follow_drive(msg)
                     elif kind == "status":
                         self.vision_status = msg
+                    elif kind == "fall":
+                        asyncio.ensure_future(self._on_camera_fall(msg))
             finally:
                 if self.follow_enabled:
                     self.set_follow(False, "camera process stopped")

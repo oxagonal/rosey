@@ -8,3 +8,6 @@ venv/
 bits2/
 recordings/
 sim_data/
+robot/voices/
+robot/models/whisper/
+robot/agent.env

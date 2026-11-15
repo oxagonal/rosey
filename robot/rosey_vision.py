@@ -139,6 +139,45 @@ class Camera:
             return self.raw, self.stamp, self.seq
 
 
+# -- fall watch -----------------------------------------------------------------
+FALL_WATCH = os.environ.get("ROSEY_FALL_WATCH", "1") != "0" and bool(os.environ.get("ANTHROPIC_API_KEY"))
+FALL_EVERY_S = 0.5
+
+
+class FallCheck:
+    """Runs rosey_fall.FallWatch on detector passes; confirmations happen in a thread
+    so the follow loop never waits on the network."""
+
+    def __init__(self):
+        from rosey_fall import FallWatch
+        self.watch = FallWatch()
+        self.busy = False
+
+    def observe(self, img, dets) -> None:
+        if self.busy or not self.watch.observe(img, dets):
+            return
+        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ok:
+            return
+        small = cv2.resize(img, (320, 180), interpolation=cv2.INTER_AREA)
+        _, thumb = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        self.busy = True
+        threading.Thread(target=self._confirm, args=(jpg.tobytes(), thumb.tobytes()), daemon=True).start()
+
+    def _confirm(self, jpg: bytes, thumb: bytes) -> None:
+        import base64
+        try:
+            log("possible fall seen; asking Claude to confirm")
+            v = self.watch.confirm(jpg)
+            log("fall check: %s" % json.dumps(v))
+            if v.get("fallen"):
+                emit("fall", description=v.get("description") or "A person may have fallen.",
+                     confidence=v.get("confidence"), unconfirmed=bool(v.get("unconfirmed")),
+                     image="data:image/jpeg;base64," + base64.b64encode(thumb).decode())
+        finally:
+            self.busy = False
+
+
 # -- follow loop ----------------------------------------------------------------
 class FollowLoop:
     def __init__(self, cam: Camera):
@@ -170,12 +209,21 @@ class FollowLoop:
         fol = Follower()
         seq, after = 0, 0.0
         n, t0 = 0, time.monotonic()
+        fall = FallCheck() if FALL_WATCH else None
+        last_pass = 0.0
         while True:
             if not self.enabled:
-                time.sleep(0.05)
-                continue
+                # Not following: still run the detector about twice a second to watch for falls.
+                if fall is None:
+                    time.sleep(0.05)
+                    continue
+                gap = FALL_EVERY_S - (time.monotonic() - last_pass)
+                if gap > 0:
+                    time.sleep(min(gap, 0.05))
+                    continue
             if det is None:
-                self.state, self.detail = "starting", "loading the person detector"
+                if self.enabled:
+                    self.state, self.detail = "starting", "loading the person detector"
                 det = Detector(threads=3)
             with self.lock:
                 if self._reset:
@@ -183,14 +231,18 @@ class FollowLoop:
                     self._reset = False
                 fol.max_speed = self.speed
             raw, stamp, seq = self.cam.wait_newer(seq, after)
+            last_pass = time.monotonic()
             if raw is None:
-                emit("halt")
-                self.state, self.detail = "no camera", self.cam.error or "waiting for the camera"
+                if self.enabled:
+                    emit("halt")
+                    self.state, self.detail = "no camera", self.cam.error or "waiting for the camera"
                 continue
             img = cv2.imdecode(raw, cv2.IMREAD_REDUCED_COLOR_2)       # 640x360
             if img is None:
                 continue
             dets = det(img, threshold=0.35)
+            if fall is not None:
+                fall.observe(img, dets)
             if not self.enabled:
                 continue
             out = fol.step(img, dets)
@@ -348,10 +400,45 @@ async def status_loop(cam: Camera, follow: FollowLoop, stats: dict) -> None:
         await asyncio.sleep(1.0)
 
 
+SNAPSHOT_DIR = os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+SNAPSHOT_JPG = os.path.join(SNAPSHOT_DIR, "rosey-camera.jpg")
+SNAPSHOT_JSON = os.path.join(SNAPSHOT_DIR, "rosey-camera.json")
+
+
+def snapshot_loop(cam: Camera, follow: FollowLoop) -> None:
+    """Once a second, leave the newest frame (640x360) and what the camera process
+    knows in /run/user/<uid> (RAM only), for the conversation to look at.
+    Atomic rename, so a reader never sees half a file."""
+    seq = 0
+    while True:
+        time.sleep(1.0)
+        try:
+            raw, stamp, seq = cam.wait_newer(seq, 0.0, 1.0)
+            if raw is None:
+                continue
+            jpg, w, h = encode(raw, "medium")
+            if jpg is None:
+                continue
+            with open(SNAPSHOT_JPG + ".tmp", "wb") as f:
+                f.write(jpg)
+            os.replace(SNAPSHOT_JPG + ".tmp", SNAPSHOT_JPG)
+            info = {"time": time.time(), "w": w, "h": h,
+                    "follow": {"enabled": follow.enabled, "state": follow.state, "detail": follow.detail},
+                    "overlay": follow.overlay}
+            with open(SNAPSHOT_JSON + ".tmp", "w") as f:
+                json.dump(info, f)
+            os.replace(SNAPSHOT_JSON + ".tmp", SNAPSHOT_JSON)
+        except Exception as exc:
+            log("snapshot problem: %s" % exc)
+            time.sleep(5)
+
+
 async def amain() -> None:
     cam = Camera()
     follow = FollowLoop(cam)
     stats: dict = {}
+    if os.environ.get("ROSEY_VISION_CONTEXT", "1") != "0":
+        threading.Thread(target=snapshot_loop, args=(cam, follow), daemon=True, name="snapshot").start()
     await asyncio.gather(video_uplink(cam, follow, stats), stdin_commands(follow), status_loop(cam, follow, stats))
 
 
