@@ -38,8 +38,8 @@ def test_centered_far_person_drives_forward_never_backward():
 
 
 def test_close_person_stops():
-    img = paint(frame(), (150, 40, 490, 350), (0, 0, 200))
-    out = rf.Follower().step(img, [person(150, 490)], now=0)
+    img = paint(frame(), (224, 40, 416, 350), (0, 0, 200))       # 30% of the width
+    out = rf.Follower().step(img, [person(224, 416)], now=0)
     assert out.state == "arrived" and not out.moving
 
 
@@ -94,9 +94,9 @@ def test_backing_stops_once_they_step_back():
     fol = rf.Follower()
     img = paint(frame(), (100, 40, 540, 350), (0, 0, 200))
     fol.step(img, [person(100, 540)], now=0)
-    # 45%: still close (no forward), but below BACK_DONE_W: stop backing
-    img2 = paint(frame(), (176, 40, 464, 350), (0, 0, 200))
-    out = fol.step(img2, [person(176, 464)], now=0.5)
+    # 30%: still close (no forward), but below BACK_DONE_W: stop backing
+    img2 = paint(frame(), (224, 40, 416, 350), (0, 0, 200))
+    out = fol.step(img2, [person(224, 416)], now=0.5)
     assert out.state == "arrived" and not out.moving
 
 

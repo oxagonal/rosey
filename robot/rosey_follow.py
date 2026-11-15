@@ -40,10 +40,10 @@ TURN_SPEED = 1.0           # turning in place needs full power (TT motors stall 
 PULSE_MIN, PULSE_MAX = 0.12, 0.28   # long enough to get the wheels past static friction
 STEER_GAIN = 0.6           # how hard to steer while driving forward
 MIN_WHEEL = 0.70           # below this the TT motors hum or crawl (manual 100% works best)
-ARRIVE_W = 0.34            # person box width (fraction of frame) at which we stop
-GO_W = 0.26                # ... and start following again (hysteresis)
-BACK_W = 0.58              # person box wider than this = too close: back away
-BACK_DONE_W = 0.48         # ... until they're back below this width
+ARRIVE_W = 0.26            # person box width (fraction of frame) at which we stop
+GO_W = 0.20                # ... and start following again (hysteresis)
+BACK_W = 0.44              # person box wider than this = too close: back away
+BACK_DONE_W = 0.35         # ... until they're back below this width
 BACK_SPEED = 0.75          # reverse wheel speed (TT motors need ~0.7 to move)
 BACK_PULSE_S = 0.3         # back up in short bursts, then stop and look again
 BACK_MAX_PULSES = 6        # blind to what's behind: at most this many bursts...

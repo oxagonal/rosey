@@ -231,3 +231,5 @@
   Turns stay at full power and wheels >= 70%, so 50% mainly limits forward speed.
 - Louder voice: everything was already at max (speaker 100%, ROSEY_TTS_VOLUME=100), so
   ROSEY_TTS_DRIVE 3 -> 5 (more compression, slightly harsher) in agent.env.
+- "Keep more distance": stop at 26% of frame width (was 34%), resume below 20% (was 26%),
+  back up above 44% (was 58%) until below 35% (was 48%).
