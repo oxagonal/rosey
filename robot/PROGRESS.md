@@ -227,3 +227,7 @@
   (AVRCP absolute volume was a false lead; reverted.)
 - Follow mode now backs up: person box wider than 58% of the frame -> reverse in 0.3 s bursts
   at 0.75 until below 48%; at most 6 bursts per 10 s since the camera can't see behind.
+- Floor test: follow mode "felt great at 50%" -> default follow speed 50% (slider 40-100%).
+  Turns stay at full power and wheels >= 70%, so 50% mainly limits forward speed.
+- Louder voice: everything was already at max (speaker 100%, ROSEY_TTS_VOLUME=100), so
+  ROSEY_TTS_DRIVE 3 -> 5 (more compression, slightly harsher) in agent.env.

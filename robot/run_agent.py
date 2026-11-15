@@ -102,7 +102,7 @@ class RoseyAgent(_RealAgent):
         self.register("say", self._say)
         # Camera + follow mode (rosey_vision.py child process).
         self.follow_enabled = False
-        self.follow_speed = 1.0
+        self.follow_speed = 0.5   # felt best in the 2026-11-15 floor test
         self.vision_status = {}
         self._vision_proc = None
         self.register("follow", self._follow_command)
