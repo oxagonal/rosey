@@ -205,3 +205,13 @@
 - Website Robot panel: new Speaker and Voice status, so problems are visible without a terminal.
 - Verified after an agent restart: server connected, conversation listening, speaker keeper
   reconnected the speaker by itself. 86 + 26 tests pass. A real power-cycle is still untested.
+
+## 2026-11-15 ~04:15: fixes after the first headless test
+- "Rosey didn't speak": the Bluetooth speaker wasn't connected from boot (03:56) until 04:10
+  (probably switched off); speech played into nothing. Keeper now retries every 10 s (was 30 s).
+- Follow mode had less power than manual 100%: it defaulted to 70%, turned at ~49% in 0.05-0.18 s
+  pulses and allowed wheels down to 45%. Now: default 100% (slider 70-100%), turns always at full
+  power in 0.12-0.28 s bursts, wheels never below 70%, forward speed stays near max until close.
+- Website "Say" box: robot now acks right away and speaks in the background (synth + playback took
+  longer than the server's 5 s timeout), and it fails with a clear error if the speaker is off or
+  has no sound output, instead of reporting success silently. Result shows in the website log.

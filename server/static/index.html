@@ -156,8 +156,8 @@
       <div id="follow-state"><b id="fs-title">Off</b><span class="muted" id="fs-detail">Rosey follows the closest person in front of the camera, steers around things in the way, and stops when she's close. STOP or any drive button turns it off.</span></div>
     </div>
     <div style="margin-top:10px">
-      <label for="follow-speed">Follow speed <span id="follow-speed-val">70%</span></label>
-      <input id="follow-speed" type="range" min="40" max="100" step="5" value="70">
+      <label for="follow-speed">Follow speed <span id="follow-speed-val">100%</span></label>
+      <input id="follow-speed" type="range" min="70" max="100" step="5" value="100">
     </div>
   </section>
 
@@ -343,6 +343,8 @@
             log(m.ok && m.result.sent ? "Test alert sent to subscribed phones" : "Test alert failed: " + (m.error || "ntfy error"), !(m.ok && m.result.sent));
           } else if (String(m.ref).startsWith("follow")) {
             if (m.ok) renderFollow({ enabled: m.result.follow }); else { log("Follow: " + m.error, true); renderFollow({ enabled: false }); }
+          } else if (String(m.ref).startsWith("say")) {
+            log(m.ok ? "Rosey is speaking" : "Say failed: " + m.error, !m.ok);
           } else log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok);
           break;
         case "error": if (m.error !== "robot offline") log("Error: " + m.error, true); break;  // the status card covers offline
@@ -448,7 +450,7 @@
     e.preventDefault();
     const text = $("say-text").value.trim();
     if (!text) return;
-    send({ type: "command", ref: Date.now(), command: { type: "say", text } });
+    send({ type: "command", ref: "say-" + Date.now(), command: { type: "say", text } });
     log("Saying: " + text); $("say-text").value = "";
   });
 

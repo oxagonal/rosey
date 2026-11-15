@@ -183,7 +183,7 @@ class FollowLoop:
     def __init__(self, cam: Camera):
         self.cam = cam
         self.enabled = False
-        self.speed = 0.7
+        self.speed = 1.0
         self.lock = threading.Lock()
         self.state, self.detail, self.det_fps = "off", "", 0.0
         self.overlay = None           # latest boxes for the video overlay

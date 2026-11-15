@@ -35,10 +35,10 @@ PERSON = 0
 TURN_INVERT = True
 DEADBAND = 0.15            # |offset| below this = centred (fraction of half-width)
 TURN_IN_PLACE = 0.45       # |offset| above this: stop and turn in place first
-TURN_SPEED = 0.7           # TT motors stall at low duty; keep this fairly high
-PULSE_MIN, PULSE_MAX = 0.05, 0.18
+TURN_SPEED = 1.0           # turning in place needs full power (TT motors stall below that on carpet)
+PULSE_MIN, PULSE_MAX = 0.12, 0.28   # long enough to get the wheels past static friction
 STEER_GAIN = 0.6           # how hard to steer while driving forward
-MIN_WHEEL = 0.45           # below this the TT motors just hum
+MIN_WHEEL = 0.70           # below this the TT motors hum or crawl (manual 100% works best)
 ARRIVE_W = 0.34            # person box width (fraction of frame) at which we stop
 GO_W = 0.26                # ... and start following again (hysteresis)
 LOST_AFTER_S = 0.6         # no match for this long -> stop
@@ -95,7 +95,7 @@ def similarity(a: Optional[np.ndarray], b: Optional[np.ndarray]) -> float:
 
 
 class Follower:
-    def __init__(self, max_speed: float = 0.8):
+    def __init__(self, max_speed: float = 1.0):
         self.max_speed = max_speed
         self.reset()
 
@@ -215,7 +215,7 @@ class Follower:
             self.forward_since = None
             k = min(1.0, (abs(off) - DEADBAND) / (1 - DEADBAND))
             out.pulse_s = PULSE_MIN + (PULSE_MAX - PULSE_MIN) * k
-            s = max(MIN_WHEEL, TURN_SPEED * self.max_speed)
+            s = max(MIN_WHEEL, TURN_SPEED)   # turns always at full power; the speed slider only limits forward speed
             out.left, out.right = turn * s, -turn * s
             out.state, out.detail = "following", "turning toward them"
             return out
@@ -234,7 +234,7 @@ class Follower:
             out.state, out.detail = "blocked", "something in the way"
             return out
 
-        speed = self.max_speed * min(1.0, 0.6 + (ARRIVE_W - width) / ARRIVE_W)
+        speed = self.max_speed * min(1.0, 0.8 + (ARRIVE_W - width) / ARRIVE_W)
         steer = STEER_GAIN * off * (1 if not TURN_INVERT else -1) + 0.35 * side * (1 if not TURN_INVERT else -1)
         if abs(off) < DEADBAND:
             steer = 0.35 * side * (1 if not TURN_INVERT else -1)

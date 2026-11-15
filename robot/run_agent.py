@@ -76,28 +76,32 @@ if os.path.exists(_run + "/pulse/native"):
     os.environ.setdefault("PULSE_SERVER", "unix:%s/pulse/native" % _run)
 
 
-async def say(msg):
-    """Speak through the default speaker (the Bluetooth speaker) with rosey_tts:
-    libespeak-ng boosted to near full scale, played with paplay. spd-say was
-    too quiet and reports success even when nothing is heard."""
-    import asyncio
+def speak_in_background(text):
+    """Speak through the default speaker (the Bluetooth speaker) with rosey_tts
+    (Piper voice, played with paplay) on a worker thread, logging the outcome.
+    Synth + playback often takes longer than the server's 5 s command timeout,
+    so callers don't wait for it."""
+    import logging, threading
     import rosey_tts
-    text = str(msg.get("text", "")).strip()[:500]
-    if not text:
-        raise ValueError("no text")
-    # Blocking synth + playback runs in a thread so drive/stop commands are never delayed.
-    await asyncio.get_running_loop().run_in_executor(None, rosey_tts.speak, text)
-    return {"spoken": text}
+    log = logging.getLogger("rosey.say")
+
+    def work():
+        try:
+            rosey_tts.speak(text)
+            log.info("said (website): %s", text)
+        except Exception as exc:
+            log.error("could not say %r: %s", text, exc)
+    threading.Thread(target=work, daemon=True).start()
 
 
 class RoseyAgent(_RealAgent):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self.add_telemetry("motors_ready", lambda: os.path.exists(PINMUX_MARKER))
-        self.register("say", say)
+        self.register("say", self._say)
         # Camera + follow mode (rosey_vision.py child process).
         self.follow_enabled = False
-        self.follow_speed = 0.7
+        self.follow_speed = 1.0
         self.vision_status = {}
         self._vision_proc = None
         self.register("follow", self._follow_command)
@@ -129,6 +133,19 @@ class RoseyAgent(_RealAgent):
             for proc in (self._voice_proc, self._vision_proc):
                 if proc is not None and proc.returncode is None:
                     proc.terminate()
+
+    async def _say(self, msg):
+        """Website "Say" box. Fails right away if the speaker can't be heard,
+        instead of playing into nothing and reporting success."""
+        text = str(msg.get("text", "")).strip()[:500]
+        if not text:
+            raise ValueError("no text")
+        if self.speaker_state == "off":
+            raise RuntimeError("speaker is not connected (is it switched on?)")
+        if self.speaker_state == "no output":
+            raise RuntimeError("speaker is connected but has no sound output")
+        speak_in_background(text)
+        return {"spoken": text}
 
     # -- follow mode ---------------------------------------------------------------
     # Safety: follow drive commands from the vision process reach the wheels only
@@ -264,7 +281,7 @@ class RoseyAgent(_RealAgent):
             if connected != was:
                 log.info("Speaker %s", "connected" if connected else "still not connected (is it on?)")
                 was = connected
-            await asyncio.sleep(20 if connected else 30)
+            await asyncio.sleep(20 if connected else 10)
 
     async def _on_camera_fall(self, msg):
         """The camera thinks someone fell: stop moving, alert the caregiver, talk to them."""
