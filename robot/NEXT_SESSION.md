@@ -7,7 +7,7 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
   (GitHub: oxagonal/rosey, `gh` logged in as oxagonal, admin). New `.py` files need a symlink too
   (`ln -s repo/robot/X.py X.py`).
 - Not in git (stay in `~/Desktop/rosey`): `agent.env` (secrets: ROSEY_SERVER, ROBOT_TOKEN,
-  ANTHROPIC_API_KEY, ROSEY_MIC, ROSEY_TTS_VOLUME=60), `voices/` (Piper female voice
+  ANTHROPIC_API_KEY, ROSEY_MIC, ROSEY_TTS_VOLUME=100), `voices/` (Piper female voice
   en_US-lessac-medium), `models/whisper/`, `logs/`.
 - Data paths use `ROSEY_HOME` (= ~/Desktop/rosey), because Python resolves symlinked script folders.
 - Website: https://rosey-control.onrender.com (Render, auto-deploys on every push to `main`).
@@ -22,7 +22,7 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
 - Keep `PROGRESS.md` updated. Voice should stay the Piper female voice ("the woman from before").
 
 ## What runs (run_agent.py supervises two child processes)
-- `rosey_converse.py`: USB mic -> wake word "Rosey" -> Whisper -> Claude (claude-opus-5-5) -> Piper.
+- `rosey_converse.py`: USB mic -> wake word "Rosey" -> Whisper -> Claude (replies: claude-sonnet-5-5; fall checks: claude-opus-5-5) -> Piper.
   Each turn includes the latest camera frame + follow state, approximate city (IP -> Amherst, MA)
   and live weather (Open-Meteo) via `rosey_context.py`.
 - `rosey_vision.py`: webcam (onn 1440p, /dev/v4l/by-id/...Sonix...index0, captured 1280x720 MJPEG).
@@ -55,7 +55,7 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
   no sound output) and **Voice** (listening / restarting / off: why), plus camera fps and motor pins.
 - With no terminal, diagnose from the website: Jetson offline = power/Wi-Fi; "Motor pins not
   fixed" = pinmux failed; Speaker "not connected" = speaker off/out of range (keeper retries every
-  30 s); Speaker "no sound output" = another audio session took it (rerun install with --autologin).
+  10 s); Speaker "no sound output" = another audio session took it (rerun install with --autologin).
 - The JLab Pop Party speaker must be switched ON; it doesn't power on by itself.
 
 ## Open items / next steps
@@ -69,3 +69,15 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
 5. After a reboot check: `systemctl is-active rosey`, `/run/rosey/pinmux.ok`, speaker connected
    (`bluetoothctl connect A0:8A:35:69:64:82`), Piper voice (no "using espeak" in the journal).
 6. Camera-only obstacle avoidance can't see walls/cables/steps; suggested adding a distance sensor.
+
+## 04:25 fixes
+- Speaker volume: the old `jlab-volume-cap` user service (18% on connect, max 50%) was the reason
+  Rosey was inaudible; disabled at the user's request. Speaker at 100%, voice ROSEY_TTS_VOLUME=100.
+  Website Speaker status shows the volume level.
+- Follow mode: full power (default 100%, turns at full power, wheels >= 70%) and backs away in short
+  bursts when the person comes too close. Not yet tested on the floor.
+- Website Say box: acks immediately, errors clearly if the speaker is off.
+- Follow default speed 50% (user: "felt great at 50%"). ROSEY_TTS_DRIVE=5 for a louder voice.
+- Volume (05:10): speaker amplifier pinned at full by the keeper; the Ubuntu JLab slider = website
+  slider is the only knob. Needs ~/.config/pulse/default.pa (copy in robot/pulse-default.pa;
+  restore it after an OS reinstall). Replies run on Claude Sonnet 5.5 (ROSEY_REPLY_MODEL).
