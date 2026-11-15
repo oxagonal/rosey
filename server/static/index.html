@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rosey Control</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
+    --accent: #2f6fde; --ok: #1f8f4e; --bad: #c4372f; --pad: #eceae5; --pad-active: #d5dcf0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141416; --panel: #1e1e21; --text: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+      --accent: #6b9bff; --ok: #4cc27f; --bad: #ff6b60; --pad: #2a2a2f; --pad-active: #33405e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .pills { display: flex; gap: 8px; }
+  .pill { font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line);
+          background: var(--panel); color: var(--muted); }
+  .pill::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                  background: var(--muted); margin-right: 6px; vertical-align: 1px; }
+  .pill.ok { color: var(--text); } .pill.ok::before { background: var(--ok); }
+  .pill.bad::before { background: var(--bad); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+  input, button { font: inherit; color: inherit; }
+  input[type=text], input[type=password] { width: 100%; padding: 10px 12px; border-radius: 10px;
+          border: 1px solid var(--line); background: var(--bg); }
+  button { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--pad); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .row { display: flex; gap: 8px; }
+  .row > input { flex: 1; }
+  .drive { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 76px); grid-template-rows: repeat(3, 76px); gap: 8px;
+          touch-action: none; user-select: none; -webkit-user-select: none; }
+  .dpad button { font-size: 26px; padding: 0; touch-action: none; }
+  .dpad button.active { background: var(--pad-active); border-color: var(--accent); }
+  #stop { grid-column: 2; grid-row: 2; background: var(--bad); border-color: var(--bad); color: #fff;
+          font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+  .side { display: grid; gap: 10px; min-width: 0; }
+  label { font-size: 13px; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+  li { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--bg); overflow-wrap: anywhere; }
+  li.alert { border-left: 3px solid var(--bad); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hidden { display: none !important; }
+  @media (max-width: 520px) {
+    .drive { grid-template-columns: 1fr; justify-items: center; }
+    .side { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Rosey</h1>
+    <div class="pills">
+      <span id="server-pill" class="pill">Server</span>
+      <span id="robot-pill" class="pill">Robot</span>
+    </div>
+  </header>
+
+  <section id="login">
+    <h2>Operator token</h2>
+    <form class="row" id="login-form">
+      <input id="token" type="password" placeholder="OPERATOR_TOKEN from Render" autocomplete="current-password">
+      <button class="primary" type="submit">Connect</button>
+    </form>
+    <p class="muted" id="login-msg">Find it in the Render dashboard under your service → Environment.</p>
+  </section>
+
+  <section id="controls" class="hidden">
+    <h2>Drive</h2>
+    <div class="drive">
+      <div class="dpad" id="dpad">
+        <button data-dir="fl" aria-label="Forward left">↖</button>
+        <button data-dir="f" aria-label="Forward">↑</button>
+        <button data-dir="fr" aria-label="Forward right">↗</button>
+        <button data-dir="l" aria-label="Turn left">↺</button>
+        <button id="stop" aria-label="Stop">STOP</button>
+        <button data-dir="r" aria-label="Turn right">↻</button>
+        <button data-dir="bl" aria-label="Back left">↙</button>
+        <button data-dir="b" aria-label="Back">↓</button>
+        <button data-dir="br" aria-label="Back right">↘</button>
+      </div>
+      <div class="side">
+        <div>
+          <label for="speed">Speed <span id="speed-val">50%</span></label>
+          <input id="speed" type="range" min="10" max="100" step="5" value="50">
+        </div>
+        <p class="muted">Hold a button to drive; release to stop. Keyboard: arrows or WASD, space to stop.
+          The robot stops on its own if commands stop arriving.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="say-box" class="hidden">
+    <h2>Speak through Rosey</h2>
+    <form class="row" id="say-form">
+      <input id="say-text" type="text" maxlength="500" placeholder="Hi! Time for your afternoon medication.">
+      <button type="submit">Say</button>
+    </form>
+  </section>
+
+  <section id="telemetry-box" class="hidden">
+    <h2>Robot</h2>
+    <div class="stats">
+      <div class="stat"><b id="t-motors">–</b><span>Motors L / R</span></div>
+      <div class="stat"><b id="t-temp">–</b><span>CPU temp</span></div>
+      <div class="stat"><b id="t-uptime">–</b><span>Agent uptime</span></div>
+      <div class="stat"><b id="t-seen">–</b><span>Last update</span></div>
+    </div>
+  </section>
+
+  <section id="log-box" class="hidden">
+    <h2>Activity</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get() { try { return localStorage.getItem("rosey-token") || ""; } catch { return ""; } },
+    set(v) { try { v ? localStorage.setItem("rosey-token", v) : localStorage.removeItem("rosey-token"); } catch {} },
+  };
+  const DIRS = { f: [1, 0], b: [-1, 0], l: [0, 1], r: [0, -1], fl: [1, 0.5], fr: [1, -0.5], bl: [-1, -0.5], br: [-1, 0.5] };
+  const KEYS = { ArrowUp: "f", w: "f", ArrowDown: "b", s: "b", ArrowLeft: "l", a: "l", ArrowRight: "r", d: "r" };
+
+  let ws = null, token = store.get(), backoff = 1000, lastTelemetry = 0;
+  const held = new Set();
+  let driveTimer = null;
+
+  function setPill(el, ok, text) { el.className = "pill " + (ok ? "ok" : "bad"); el.textContent = text; }
+  function show(loggedIn) {
+    $("login").classList.toggle("hidden", loggedIn);
+    for (const id of ["controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
+  }
+  function log(text, alert) {
+    const li = document.createElement("li");
+    li.textContent = new Date().toLocaleTimeString() + "  " + text;
+    if (alert) li.className = "alert";
+    $("log").prepend(li);
+    while ($("log").children.length > 50) $("log").lastChild.remove();
+  }
+  function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+  function connect() {
+    if (!token) { show(false); return; }
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/control");
+    ws.onopen = () => send({ type: "auth", token });
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      switch (m.type) {
+        case "auth_ok": backoff = 1000; setPill($("server-pill"), true, "Server"); show(true); break;
+        case "auth_error":
+          token = ""; store.set(""); $("login-msg").textContent = "That token was rejected."; show(false); break;
+        case "status": setPill($("robot-pill"), m.robot_online, m.robot_online ? "Robot online" : "Robot offline");
+          if (m.telemetry) telemetry(m.telemetry); break;
+        case "robot": setPill($("robot-pill"), m.online, m.online ? "Robot online" : "Robot offline");
+          log(m.online ? "Robot connected" : "Robot disconnected", !m.online); break;
+        case "telemetry": telemetry(m); break;
+        case "event": log("EVENT: " + m.event + (m.detail ? " – " + JSON.stringify(m.detail) : ""), true); break;
+        case "command_result": log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok); break;
+        case "error": if (m.error !== "robot offline" || !held.size) log("Error: " + m.error, true); break;
+      }
+    };
+    ws.onclose = () => {
+      setPill($("server-pill"), false, "Server");
+      releaseAll();
+      if (token) { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 15000); }
+    };
+  }
+
+  function telemetry(t) {
+    lastTelemetry = Date.now();
+    if (t.motors) $("t-motors").textContent = fmt(t.motors.left) + " / " + fmt(t.motors.right);
+    $("t-temp").textContent = t.cpu_temp_c != null ? t.cpu_temp_c.toFixed(0) + " °C" : "–";
+    $("t-uptime").textContent = t.uptime_s != null ? dur(t.uptime_s) : "–";
+  }
+  const fmt = (v) => (v == null ? "–" : (v >= 0 ? "+" : "") + v.toFixed(2));
+  const dur = (s) => s < 120 ? Math.round(s) + " s" : s < 7200 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
+  setInterval(() => { if (lastTelemetry) $("t-seen").textContent = Math.round((Date.now() - lastTelemetry) / 1000) + " s ago"; }, 1000);
+
+  // -- driving: resend while held (the robot's dead-man timer needs fresh commands) --
+  function command() {
+    const k = $("speed").value / 100;
+    let lin = 0, ang = 0;
+    for (const d of held) { lin += DIRS[d][0]; ang += DIRS[d][1]; }
+    lin = Math.max(-1, Math.min(1, lin)); ang = Math.max(-1, Math.min(1, ang));
+    return { type: "drive", linear: +(lin * k).toFixed(2), angular: +(ang * k * 0.8).toFixed(2), ttl_ms: 400 };
+  }
+  function update() {
+    document.querySelectorAll("#dpad [data-dir]").forEach((b) => b.classList.toggle("active", held.has(b.dataset.dir)));
+    if (held.size) {
+      send(command());
+      if (!driveTimer) driveTimer = setInterval(() => send(command()), 100);
+    } else {
+      clearInterval(driveTimer); driveTimer = null; send({ type: "stop" });
+    }
+  }
+  function releaseAll() { if (held.size || driveTimer) { held.clear(); update(); } }
+
+  document.querySelectorAll("#dpad [data-dir]").forEach((b) => {
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); held.add(b.dataset.dir); update(); });
+    const up = () => { if (held.delete(b.dataset.dir)) update(); };
+    b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up); b.addEventListener("lostpointercapture", up);
+  });
+  $("stop").addEventListener("pointerdown", (e) => { e.preventDefault(); held.clear(); update(); });
+  $("speed").addEventListener("input", () => { $("speed-val").textContent = $("speed").value + "%"; });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+    if (e.key === " ") { e.preventDefault(); releaseAll(); send({ type: "stop" }); return; }
+    const d = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];
+    if (d && !held.has(d)) { e.preventDefault(); held.add(d); update(); }
+  });
+  document.addEventListener("keyup", (e) => {
+    const d = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];
+    if (d && held.delete(d)) update();
+  });
+  window.addEventListener("blur", releaseAll);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });
+
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    token = $("token").value.trim(); store.set(token); $("token").value = "";
+    if (ws && ws.readyState <= 1) ws.close(); else connect();
+  });
+  $("say-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("say-text").value.trim();
+    if (!text) return;
+    send({ type: "command", ref: Date.now(), command: { type: "say", text } });
+    log("Saying: " + text); $("say-text").value = "";
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Install (from the repo's jetson/ folder):
+#   sed "s|YOUR_USER|$USER|g; s|REPO_DIR|$(pwd)|g" rosey-agent.service | sudo tee /etc/systemd/system/rosey-agent.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rosey-agent
+#   journalctl -u rosey-agent -f
+[Unit]
+Description=Rosey robot agent (motors + control server link)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=YOUR_USER
+WorkingDirectory=REPO_DIR
+EnvironmentFile=/etc/rosey/agent.env
+ExecStart=/usr/bin/python3 -m rosey_agent
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

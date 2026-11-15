@@ -1,0 +1,19 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repo.
+# Render generates ROBOT_TOKEN and OPERATOR_TOKEN; copy them from the service's
+# Environment page (ROBOT_TOKEN goes on the Jetson, OPERATOR_TOKEN is your login).
+services:
+  - type: web
+    name: rosey-control
+    runtime: python
+    plan: free            # free sleeps after 15 min with no traffic; the connected robot's telemetry keeps it awake
+    region: virginia      # pick the region nearest the robot (lower driving lag); can't be changed later
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server.main:create_app --factory --host 0.0.0.0 --port $PORT --forwarded-allow-ips='*' --timeout-graceful-shutdown 10
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: ROBOT_TOKEN
+        generateValue: true
+      - key: OPERATOR_TOKEN
+        generateValue: true
+      # Optional, add in the dashboard: ALERT_WEBHOOK_URL (robot events such as falls are POSTed there as JSON)
