@@ -1,9 +1,11 @@
 # Rosey: link the Jetson to the Render control server at boot.
-# Install with: sudo bash ~/Desktop/rosey/install_service.sh
+# Install with: sudo bash ~/Desktop/rosey/install_boot.sh
 [Unit]
 Description=Rosey robot agent (motors + Render control server link)
-After=network-online.target
-Wants=network-online.target
+# user@1000 = henry's user session, which runs PulseAudio (speaker + mic). Starting it
+# here means audio works at boot with nobody logged in and no screen attached.
+After=network-online.target bluetooth.service user@1000.service
+Wants=network-online.target bluetooth.service user@1000.service
 
 [Service]
 User=henry

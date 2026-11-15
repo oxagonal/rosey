@@ -196,3 +196,12 @@
   Test notifications (text + photo) accepted by ntfy (HTTP 200).
 - Server bug fixed: command results over /ws/control had their type overwritten by the robot's "ack",
   so the page never saw any command result ("Say" never logged "done"). Regression test added.
+
+## 2026-11-15 ~03:15: fully headless boot
+- Goal: next power-on with no screen/keyboard/terminal; everything must start by itself.
+- rosey.service pulls in bluetooth.service and user@1000.service (henry's PulseAudio) at boot.
+- install_boot.sh also disables the login screen's PulseAudio (it can grab the BT speaker),
+  sets Wi-Fi autoconnect, restarts Rosey and prints a status check.
+- Website Robot panel: new Speaker and Voice status, so problems are visible without a terminal.
+- Verified after an agent restart: server connected, conversation listening, speaker keeper
+  reconnected the speaker by itself. 86 + 26 tests pass. A real power-cycle is still untested.

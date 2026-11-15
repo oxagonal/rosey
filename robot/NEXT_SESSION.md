@@ -1,4 +1,4 @@
-# Rosey: handoff notes for the next session (written 2026-11-15 ~01:55)
+# Rosey: handoff notes for the next session (updated 2026-11-15 ~03:15)
 
 Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in this folder.
 
@@ -45,11 +45,22 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
   app (PWA + Web Push) is still a possible later upgrade.
 - Speaker keeper in run_agent (auto-reconnects the BT speaker). `install_boot.sh` written.
 
+## Headless boot (~03:15): the robot now runs with no screen, keyboard or terminal
+- `install_boot.sh` (needs sudo once): linger for henry (PulseAudio at boot), installs/enables
+  rosey.service, turns off the login screen's PulseAudio (so gdm can't grab the BT speaker),
+  Wi-Fi autoconnect, then restarts Rosey and prints status. `--autologin` = extra fallback.
+- rosey.service now `Wants=/After=` bluetooth.service and user@1000.service (henry's audio session).
+- Wi-Fi is eduroam, a system connection with a saved password (connects with nobody logged in).
+- The website's Robot panel shows headless health: **Speaker** (connected / not connected /
+  no sound output) and **Voice** (listening / restarting / off: why), plus camera fps and motor pins.
+- With no terminal, diagnose from the website: Jetson offline = power/Wi-Fi; "Motor pins not
+  fixed" = pinmux failed; Speaker "not connected" = speaker off/out of range (keeper retries every
+  30 s); Speaker "no sound output" = another audio session took it (rerun install with --autologin).
+- The JLab Pop Party speaker must be switched ON; it doesn't power on by itself.
+
 ## Open items / next steps
-1. **User must run `sudo bash ~/Desktop/rosey/install_boot.sh`** (linger, so audio works at boot
-   with nobody logged in), then test a real reboot: website online, speaker connects, "Rosey" answers.
-   If the login screen grabs the BT speaker (keeper logs "connected but has no audio output"), rerun
-   with `--autologin`.
+1. **If not done yet: run `sudo bash ~/Desktop/rosey/install_boot.sh`** (check: `loginctl
+   show-user henry -p Linger` must say yes). Then a real power-cycle test.
 2. **Not tested on real hardware yet:** follow mode driving on the floor (mock motors only), obstacle
    avoidance, and camera fall detection with a real person lying down.
 3. **Possible reversed turning:** old follow.py needed TURN_INVERT=True, which suggests drive(+L,-R)

@@ -105,6 +105,11 @@ class RoseyAgent(_RealAgent):
         self.register("notify_test", self._notify_test)
         self.add_telemetry("follow", lambda: dict(self.vision_status.get("follow") or {}, enabled=self.follow_enabled))
         self.add_telemetry("camera", lambda: self.vision_status.get("camera"))
+        # Headless health (no screen or terminal on the robot): shown on the website.
+        self.speaker_state = "starting"   # starting | ok | no output | off | disabled
+        self.voice_state = "starting"     # starting | listening | restarting | off: <why>
+        self.add_telemetry("speaker", lambda: self.speaker_state)
+        self.add_telemetry("voice", lambda: self.voice_state)
         # Load the voice model now (about 2.5 s) so the first "say" isn't delayed.
         import threading, rosey_tts
         threading.Thread(target=rosey_tts.engine, daemon=True).start()
@@ -220,6 +225,7 @@ class RoseyAgent(_RealAgent):
         log = logging.getLogger("rosey.audio")
         mac = os.environ.get("ROSEY_SPEAKER_BT", "A0:8A:35:69:64:82").strip()
         if not mac or mac == "0":
+            self.speaker_state = "disabled"
             return
         sink = "bluez_sink.%s.a2dp_sink" % mac.replace(":", "_")
 
@@ -249,9 +255,12 @@ class RoseyAgent(_RealAgent):
                 if sink not in sinks and connected != was:
                     log.warning("Speaker is connected but has no audio output in PulseAudio "
                                 "(another session may have claimed it, e.g. the login screen)")
+                self.speaker_state = "ok" if sink in sinks else "no output"
                 if sink in sinks and default.strip() != sink:
                     await run("pactl", "set-default-sink", sink)
                     log.info("Speaker set as default output")
+            else:
+                self.speaker_state = "off"
             if connected != was:
                 log.info("Speaker %s", "connected" if connected else "still not connected (is it on?)")
                 was = connected
@@ -324,9 +333,11 @@ class RoseyAgent(_RealAgent):
         log = logging.getLogger("rosey.voice")
         if os.environ.get("ROSEY_CONVERSE", "1") == "0":
             log.info("Conversation disabled (ROSEY_CONVERSE=0)")
+            self.voice_state = "off: disabled"
             return
         if not os.environ.get("ANTHROPIC_API_KEY"):
             log.warning("No ANTHROPIC_API_KEY in agent.env: conversation is off")
+            self.voice_state = "off: no API key"
             return
         backoff = 3.0
         while not self._stopping.is_set():
@@ -348,6 +359,7 @@ class RoseyAgent(_RealAgent):
                         log.info("%s: %s", kind, msg.get("text"))
                     elif kind == "ready":
                         log.info("Conversation listening")
+                        self.voice_state = "listening"
             finally:
                 if proc.returncode is None:
                     proc.terminate()
@@ -356,8 +368,10 @@ class RoseyAgent(_RealAgent):
                 break
             if proc.returncode == 2:     # configuration problem (e.g. no key): don't loop
                 log.error("Conversation process exited (code 2), not restarting")
+                self.voice_state = "off: setup problem"
                 return
             backoff = 3.0 if time.monotonic() - started > 60 else min(backoff * 2, 120.0)
+            self.voice_state = "restarting"
             log.warning("Conversation process exited (code %s); restarting in %.0f s", proc.returncode, backoff)
             await asyncio.sleep(backoff)
 
