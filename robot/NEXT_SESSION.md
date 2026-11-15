@@ -39,11 +39,17 @@ Read this first, then `PROGRESS.md` (full history) and `README.md` (file map) in
 - Volume 50 -> 60. Voice regression (espeak) after the repo move: fixed with ROSEY_HOME.
 - Detector CPU fix (onnxruntime spin-wait off): camera process 144% -> 42% CPU.
 
+## Added later the same night (~02:00)
+- Phone notifications via ntfy (`rosey_notify.py`), sent by the robot itself; topic in agent.env
+  (ROSEY_NTFY_TOPIC); website "Phone alerts" section shows setup + test button. A real installable
+  app (PWA + Web Push) is still a possible later upgrade.
+- Speaker keeper in run_agent (auto-reconnects the BT speaker). `install_boot.sh` written.
+
 ## Open items / next steps
-1. **User's pending question: notifications app.** Offered two options, awaiting their choice:
-   (a) ntfy.sh via the existing ALERT_WEBHOOK_URL (quick; note the event JSON includes a base64
-   image, so a small formatter may be needed), or (b) PWA + Web Push (VAPID, pywebpush); Render free
-   tier has no disk, so subscriptions need a small free DB. Recommended (a) now, (b) later.
+1. **User must run `sudo bash ~/Desktop/rosey/install_boot.sh`** (linger, so audio works at boot
+   with nobody logged in), then test a real reboot: website online, speaker connects, "Rosey" answers.
+   If the login screen grabs the BT speaker (keeper logs "connected but has no audio output"), rerun
+   with `--autologin`.
 2. **Not tested on real hardware yet:** follow mode driving on the floor (mock motors only), obstacle
    avoidance, and camera fall detection with a real person lying down.
 3. **Possible reversed turning:** old follow.py needed TURN_INVERT=True, which suggests drive(+L,-R)
