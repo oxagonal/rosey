@@ -81,6 +81,9 @@ class FallWatch:
             verdict = self._ask(jpeg)
         except Exception as exc:
             # Can't reach Claude: a strong, persistent "lying" signal is still worth an alert.
+            import sys
+            print("rosey_fall: double-check failed: %s: %s" % (type(exc).__name__, str(exc)[:300]),
+                  file=sys.stderr, flush=True)
             verdict = {"fallen": True, "confidence": 0.5, "unconfirmed": True,
                        "description": "A person may be lying on the floor (couldn't double-check: %s)." % type(exc).__name__}
         fallen = bool(verdict.get("fallen")) and float(verdict.get("confidence", 0)) >= 0.5
@@ -94,7 +97,7 @@ class FallWatch:
             import anthropic
             self._client = anthropic.Anthropic(max_retries=1, timeout=20.0)
         msg = self._client.messages.create(
-            model=self.model, max_tokens=300,
+            model=self.model, max_tokens=1500,   # room for any thinking before the JSON (300 once left no answer)
             messages=[{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                              "data": base64.b64encode(jpeg).decode()}},
@@ -104,5 +107,5 @@ class FallWatch:
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         m = re.search(r"\{.*\}", text, re.S)
         if not m:
-            raise ValueError("no JSON in answer: %r" % text[:100])
+            raise ValueError("no JSON in answer (stop_reason=%s): %r" % (getattr(msg, "stop_reason", "?"), text[:200]))
         return json.loads(m.group(0))
