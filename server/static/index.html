@@ -165,6 +165,7 @@
   // Jetson connection state (times are this browser's clock, in ms)
   const STALE_MS = 5000;  // the Jetson sends telemetry every second
   let serverUp = false, robotOnline = false, robotInfo = null, connectedAt = 0, lastHeard = 0, lastSeen = 0;
+  let motorsReady = null;  // null = the agent doesn't report it
   const canDrive = () => serverUp && robotOnline;
 
   function setPill(el, cls, text) { el.className = "pill " + cls; el.textContent = text; }
@@ -181,6 +182,10 @@
     let cls, title, detail;
     if (!serverUp) {
       cls = ""; title = "Can't reach the server"; detail = "Reconnecting… (a sleeping free Render service takes about a minute to wake)";
+    } else if (robotOnline && now - lastHeard < STALE_MS && motorsReady === false) {
+      cls = "warn"; title = "Jetson connected, but the motors are not enabled";
+      detail = "The motor pins weren't set up after the last boot, so the wheels can't turn. "
+        + "On the Jetson run <code>sudo systemctl restart rosey</code>.";
     } else if (robotOnline && now - lastHeard < STALE_MS) {
       cls = "ok"; title = "Jetson connected";
       detail = [robotInfo && robotInfo.name, "connected " + ago(now - connectedAt), "last heard " + ago(now - lastHeard) + " ago"]
@@ -190,14 +195,15 @@
       detail = "No updates for " + ago(now - lastHeard) + ". Check its power and Wi-Fi.";
     } else {
       cls = "bad"; title = "Jetson not connected";
-      detail = (lastSeen ? "Last seen " + ago(now - lastSeen) + " ago. " : "") + "Start it on the Jetson: <code>python3 -m rosey_agent</code>";
+      detail = (lastSeen ? "Last seen " + ago(now - lastSeen) + " ago. " : "") + "Start it on the Jetson: <code>sudo systemctl start rosey</code>";
     }
     const box = $("robot-status");
     box.classList.remove("ok", "warn", "bad");
     if (cls) box.classList.add(cls);
     $("rs-title").textContent = title;
     $("rs-detail").innerHTML = detail;  // only our own fixed strings and numbers
-    const label = !serverUp ? "Jetson ?" : cls === "ok" ? "Jetson online" : cls === "warn" ? "Jetson not responding" : "Jetson offline";
+    const label = !serverUp ? "Jetson ?" : cls === "ok" ? "Jetson online"
+      : cls === "warn" ? (motorsReady === false && now - lastHeard < STALE_MS ? "Motors off" : "Jetson not responding") : "Jetson offline";
     setPill($("robot-pill"), cls || "", label);
     const locked = !canDrive();
     $("dpad").classList.toggle("locked", locked);
@@ -236,7 +242,7 @@
         }
         case "robot":
           if (m.online) { robotOnline = true; robotInfo = m.robot; connectedAt = lastHeard = Date.now(); }
-          else { robotOnline = false; lastSeen = Date.now(); releaseAll(); }
+          else { robotOnline = false; motorsReady = null; lastSeen = Date.now(); releaseAll(); }
           log(m.online ? "Jetson connected" : "Jetson disconnected", !m.online);
           renderStatus(); break;
         case "telemetry": lastHeard = Date.now(); telemetry(m); renderStatus(); break;
@@ -256,6 +262,7 @@
 
   function telemetry(t) {
     lastTelemetry = Date.now();
+    motorsReady = typeof t.motors_ready === "boolean" ? t.motors_ready : null;
     if (t.motors) $("t-motors").textContent = fmt(t.motors.left) + " / " + fmt(t.motors.right);
     $("t-temp").textContent = t.cpu_temp_c != null ? t.cpu_temp_c.toFixed(0) + " °C" : "–";
     $("t-uptime").textContent = t.uptime_s != null ? dur(t.uptime_s) : "–";
