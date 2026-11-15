@@ -7,7 +7,8 @@ Rosey is a three-wheeled caretaking robot for seniors living alone, built on a J
 - `server/`: FastAPI app deployed to Render (`render.yaml`). In-memory hub that relays commands to the robot over a WebSocket the Jetson opens (`/ws/robot`). Control page at `server/static/index.html`.
 - `jetson/rosey_agent/`: runs on the robot. `agent.py` (server link, dead-man stop, command handlers), `motors.py` (L293D driver, pin map from the wiring schematic), `myo_bridge.py` (forwards Myo fall alerts).
 - `myo/`: Myo fall detection, **work in progress**: never run on real hardware. Detector tuned on simulated data; impact trigger checked against a real wrist dataset (`myo/tools/bits2_peaks.py`). See `myo/README.md`.
-- `tests/`, `myo/tests/`: `pytest` from the repo root runs everything (`pytest.ini` sets paths).
+- `robot/`: the code that actually runs on the Jetson (deployed as `~/Desktop/rosey`, symlinked into this folder): agent entry point, working motor driver, camera streaming + follow mode, voice conversation. See `robot/README.md`.
+- `tests/`, `myo/tests/`, `robot/tests/`: `pytest` from the repo root runs everything (`pytest.ini` sets paths).
 
 ## Commands
 
