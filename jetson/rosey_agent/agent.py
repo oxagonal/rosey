@@ -115,7 +115,18 @@ class RobotAgent:
             try:
                 async with websockets.connect(self.url, open_timeout=20, ping_interval=20,
                                               ping_timeout=20, max_size=2 ** 20) as ws:
-                    if await self._session(ws):
+                    # Run the session until it ends or stop() is called (e.g. systemctl stop),
+                    # then leave the `async with`, which closes the socket cleanly.
+                    session = asyncio.ensure_future(self._session(ws))
+                    stopper = asyncio.ensure_future(self._stopping.wait())
+                    try:
+                        await asyncio.wait({session, stopper}, return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        stopper.cancel()
+                        if not session.done():
+                            session.cancel()
+                            await asyncio.gather(session, return_exceptions=True)
+                    if not session.cancelled() and session.result():
                         backoff = 1.0
             except asyncio.CancelledError:
                 raise

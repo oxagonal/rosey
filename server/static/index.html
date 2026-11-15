@@ -7,12 +7,12 @@
 <style>
   :root {
     --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
-    --accent: #2f6fde; --ok: #1f8f4e; --bad: #c4372f; --pad: #eceae5; --pad-active: #d5dcf0;
+    --accent: #2f6fde; --ok: #1f8f4e; --warn: #b7791f; --bad: #c4372f; --pad: #eceae5; --pad-active: #d5dcf0;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #141416; --panel: #1e1e21; --text: #ececee; --muted: #9a9aa2; --line: #2e2e33;
-      --accent: #6b9bff; --ok: #4cc27f; --bad: #ff6b60; --pad: #2a2a2f; --pad-active: #33405e;
+      --accent: #6b9bff; --ok: #4cc27f; --warn: #e0a84a; --bad: #ff6b60; --pad: #2a2a2f; --pad-active: #33405e;
     }
   }
   * { box-sizing: border-box; }
@@ -28,6 +28,19 @@
                   background: var(--muted); margin-right: 6px; vertical-align: 1px; }
   .pill.ok { color: var(--text); } .pill.ok::before { background: var(--ok); }
   .pill.bad::before { background: var(--bad); }
+  .pill.warn::before { background: var(--warn); }
+  .status { display: flex; gap: 14px; align-items: center; }
+  .status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); flex: none; }
+  .status b { display: block; font-size: 17px; }
+  .status span { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .status code { font-size: 12px; background: var(--bg); padding: 1px 5px; border-radius: 5px; }
+  .status.ok { border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+  .status.ok .dot { background: var(--ok); box-shadow: 0 0 0 5px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .status.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+  .status.warn .dot { background: var(--warn); }
+  .status.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+  .status.bad .dot { background: var(--bad); }
+  .locked { opacity: .4; pointer-events: none; }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
   input, button { font: inherit; color: inherit; }
@@ -67,7 +80,7 @@
     <h1>Rosey</h1>
     <div class="pills">
       <span id="server-pill" class="pill">Server</span>
-      <span id="robot-pill" class="pill">Robot</span>
+      <span id="robot-pill" class="pill">Jetson</span>
     </div>
   </header>
 
@@ -78,6 +91,11 @@
       <button class="primary" type="submit">Connect</button>
     </form>
     <p class="muted" id="login-msg">Find it in the Render dashboard under your service → Environment.</p>
+  </section>
+
+  <section id="robot-status" class="status hidden" role="status" aria-live="polite">
+    <div class="dot"></div>
+    <div><b id="rs-title">Checking…</b><span id="rs-detail"></span></div>
   </section>
 
   <section id="controls" class="hidden">
@@ -99,8 +117,9 @@
           <label for="speed">Speed <span id="speed-val">50%</span></label>
           <input id="speed" type="range" min="10" max="100" step="5" value="50">
         </div>
-        <p class="muted">Hold a button to drive; release to stop. Keyboard: arrows or WASD, space to stop.
+        <p class="muted" id="drive-help">Hold a button to drive; release to stop. Keyboard: arrows or WASD, space to stop.
           The robot stops on its own if commands stop arriving.</p>
+        <p class="muted hidden" id="drive-locked">Driving unlocks when the Jetson connects.</p>
       </div>
     </div>
   </section>
@@ -143,10 +162,49 @@
   const held = new Set();
   let driveTimer = null;
 
-  function setPill(el, ok, text) { el.className = "pill " + (ok ? "ok" : "bad"); el.textContent = text; }
+  // Jetson connection state (times are this browser's clock, in ms)
+  const STALE_MS = 5000;  // the Jetson sends telemetry every second
+  let serverUp = false, robotOnline = false, robotInfo = null, connectedAt = 0, lastHeard = 0, lastSeen = 0;
+  const canDrive = () => serverUp && robotOnline;
+
+  function setPill(el, cls, text) { el.className = "pill " + cls; el.textContent = text; }
   function show(loggedIn) {
     $("login").classList.toggle("hidden", loggedIn);
-    for (const id of ["controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
+    for (const id of ["robot-status", "controls", "say-box", "telemetry-box", "log-box"]) $(id).classList.toggle("hidden", !loggedIn);
+  }
+  function ago(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
+  }
+  function renderStatus() {
+    const now = Date.now();
+    let cls, title, detail;
+    if (!serverUp) {
+      cls = ""; title = "Can't reach the server"; detail = "Reconnecting… (a sleeping free Render service takes about a minute to wake)";
+    } else if (robotOnline && now - lastHeard < STALE_MS) {
+      cls = "ok"; title = "Jetson connected";
+      detail = [robotInfo && robotInfo.name, "connected " + ago(now - connectedAt), "last heard " + ago(now - lastHeard) + " ago"]
+        .filter(Boolean).join(" · ");
+    } else if (robotOnline) {
+      cls = "warn"; title = "Jetson connected, but not responding";
+      detail = "No updates for " + ago(now - lastHeard) + ". Check its power and Wi-Fi.";
+    } else {
+      cls = "bad"; title = "Jetson not connected";
+      detail = (lastSeen ? "Last seen " + ago(now - lastSeen) + " ago. " : "") + "Start it on the Jetson: <code>python3 -m rosey_agent</code>";
+    }
+    const box = $("robot-status");
+    box.classList.remove("ok", "warn", "bad");
+    if (cls) box.classList.add(cls);
+    $("rs-title").textContent = title;
+    $("rs-detail").innerHTML = detail;  // only our own fixed strings and numbers
+    const label = !serverUp ? "Jetson ?" : cls === "ok" ? "Jetson online" : cls === "warn" ? "Jetson not responding" : "Jetson offline";
+    setPill($("robot-pill"), cls || "", label);
+    const locked = !canDrive();
+    $("dpad").classList.toggle("locked", locked);
+    $("say-form").classList.toggle("locked", locked);
+    $("drive-help").classList.toggle("hidden", locked);
+    $("drive-locked").classList.toggle("hidden", !locked);
+    document.title = (cls === "ok" ? "● " : cls === "warn" ? "◐ " : "○ ") + "Rosey Control";
   }
   function log(text, alert) {
     const li = document.createElement("li");
@@ -164,22 +222,34 @@
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       switch (m.type) {
-        case "auth_ok": backoff = 1000; setPill($("server-pill"), true, "Server"); show(true); break;
+        case "auth_ok":
+          backoff = 1000; serverUp = true; setPill($("server-pill"), "ok", "Server"); show(true); renderStatus(); break;
         case "auth_error":
           token = ""; store.set(""); $("login-msg").textContent = "That token was rejected."; show(false); break;
-        case "status": setPill($("robot-pill"), m.robot_online, m.robot_online ? "Robot online" : "Robot offline");
-          if (m.telemetry) telemetry(m.telemetry); break;
-        case "robot": setPill($("robot-pill"), m.online, m.online ? "Robot online" : "Robot offline");
-          log(m.online ? "Robot connected" : "Robot disconnected", !m.online); break;
-        case "telemetry": telemetry(m); break;
+        case "status": {
+          const now = Date.now();
+          robotOnline = !!m.robot_online; robotInfo = m.robot;
+          if (m.last_seen_s_ago != null) lastHeard = lastSeen = now - m.last_seen_s_ago * 1000;
+          if (robotOnline && m.connected_for_s != null) connectedAt = now - m.connected_for_s * 1000;
+          if (m.telemetry) telemetry(m.telemetry);
+          renderStatus(); break;
+        }
+        case "robot":
+          if (m.online) { robotOnline = true; robotInfo = m.robot; connectedAt = lastHeard = Date.now(); }
+          else { robotOnline = false; lastSeen = Date.now(); releaseAll(); }
+          log(m.online ? "Jetson connected" : "Jetson disconnected", !m.online);
+          renderStatus(); break;
+        case "telemetry": lastHeard = Date.now(); telemetry(m); renderStatus(); break;
         case "event": log("EVENT: " + m.event + (m.detail ? " – " + JSON.stringify(m.detail) : ""), true); break;
         case "command_result": log(m.ok ? "Robot: done" : "Robot: " + m.error, !m.ok); break;
-        case "error": if (m.error !== "robot offline" || !held.size) log("Error: " + m.error, true); break;
+        case "error": if (m.error !== "robot offline") log("Error: " + m.error, true); break;  // the status card covers offline
       }
     };
     ws.onclose = () => {
-      setPill($("server-pill"), false, "Server");
+      serverUp = false;
+      setPill($("server-pill"), "bad", "Server");
       releaseAll();
+      renderStatus();
       if (token) { setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 15000); }
     };
   }
@@ -192,7 +262,10 @@
   }
   const fmt = (v) => (v == null ? "–" : (v >= 0 ? "+" : "") + v.toFixed(2));
   const dur = (s) => s < 120 ? Math.round(s) + " s" : s < 7200 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
-  setInterval(() => { if (lastTelemetry) $("t-seen").textContent = Math.round((Date.now() - lastTelemetry) / 1000) + " s ago"; }, 1000);
+  setInterval(() => {
+    if (lastTelemetry) $("t-seen").textContent = Math.round((Date.now() - lastTelemetry) / 1000) + " s ago";
+    if (token) renderStatus();  // keeps the "ago" times current and catches a Jetson that went quiet
+  }, 1000);
 
   // -- driving: resend while held (the robot's dead-man timer needs fresh commands) --
   function command() {
@@ -214,7 +287,11 @@
   function releaseAll() { if (held.size || driveTimer) { held.clear(); update(); } }
 
   document.querySelectorAll("#dpad [data-dir]").forEach((b) => {
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); held.add(b.dataset.dir); update(); });
+    b.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if (!canDrive()) return;
+      b.setPointerCapture(e.pointerId); held.add(b.dataset.dir); update();
+    });
     const up = () => { if (held.delete(b.dataset.dir)) update(); };
     b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up); b.addEventListener("lostpointercapture", up);
   });
@@ -224,7 +301,7 @@
     if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
     if (e.key === " ") { e.preventDefault(); releaseAll(); send({ type: "stop" }); return; }
     const d = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];
-    if (d && !held.has(d)) { e.preventDefault(); held.add(d); update(); }
+    if (d && !held.has(d) && canDrive()) { e.preventDefault(); held.add(d); update(); }
   });
   document.addEventListener("keyup", (e) => {
     const d = KEYS[e.key] || KEYS[e.key.toLowerCase?.()];

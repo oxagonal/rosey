@@ -116,3 +116,32 @@ def test_ws_url():
     assert to_ws_url("http://localhost:8000") == "ws://localhost:8000/ws/robot"
     assert to_ws_url("rosey.onrender.com") == "wss://rosey.onrender.com/ws/robot"
     assert to_ws_url("wss://x.example/ws/robot") == "wss://x.example/ws/robot"
+
+
+async def stop_scenario():
+    port = free_port()
+    base = "http://127.0.0.1:%d" % port
+    app = create_app(Settings(robot_token=ROBOT_TOKEN, operator_token=OPERATOR_TOKEN))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    server_task = asyncio.ensure_future(server.serve())
+    await wait_for(lambda: server.started)
+
+    motors = MockMotors()
+    agent = RobotAgent(base, ROBOT_TOKEN, motors)
+    agent_task = asyncio.ensure_future(agent.run())
+    await wait_for(lambda: app.state.hub.online)
+    await app.state.hub.drive(0.5, 0.5, 2000)
+    await wait_for(lambda: motors.moving)
+
+    # What `systemctl stop` / Ctrl-C does: the agent must stop the motors, disconnect and exit.
+    agent.stop()
+    assert not motors.moving
+    await asyncio.wait_for(agent_task, 3)
+    await wait_for(lambda: not app.state.hub.online, timeout=3)
+
+    server.should_exit = True
+    await asyncio.wait_for(server_task, 15)
+
+
+def test_agent_stop_disconnects_and_exits():
+    asyncio.run(stop_scenario())
