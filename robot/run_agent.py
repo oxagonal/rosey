@@ -112,11 +112,13 @@ class RoseyAgent(_RealAgent):
         import asyncio
         voice = asyncio.ensure_future(self._voice_supervisor())
         vision = asyncio.ensure_future(self._vision_supervisor())
+        audio = asyncio.ensure_future(self._audio_keeper())
         try:
             await super().run()
         finally:
             voice.cancel()
             vision.cancel()
+            audio.cancel()
             for proc in (self._voice_proc, self._vision_proc):
                 if proc is not None and proc.returncode is None:
                     proc.terminate()
@@ -185,6 +187,50 @@ class RoseyAgent(_RealAgent):
         if self.follow_enabled and not reason.startswith("dead-man"):
             self.set_follow(False, reason)
         super()._halt(reason)
+
+    async def _audio_keeper(self):
+        """Keep the Bluetooth speaker connected and set as the default output.
+        It doesn't always reconnect by itself after a reboot or going out of range."""
+        import asyncio, logging, re
+        log = logging.getLogger("rosey.audio")
+        mac = os.environ.get("ROSEY_SPEAKER_BT", "A0:8A:35:69:64:82").strip()
+        if not mac or mac == "0":
+            return
+        sink = "bluez_sink.%s.a2dp_sink" % mac.replace(":", "_")
+
+        async def run(*cmd, timeout=20.0):
+            try:
+                p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                         stderr=asyncio.subprocess.STDOUT)
+                out, _ = await asyncio.wait_for(p.communicate(), timeout)
+                return p.returncode, out.decode(errors="replace")
+            except (OSError, asyncio.TimeoutError) as exc:
+                return -1, str(exc)
+
+        await asyncio.sleep(5)
+        was = None
+        while not self._stopping.is_set():
+            _, info = await run("bluetoothctl", "info", mac)
+            connected = bool(re.search(r"Connected:\s*yes", info))
+            if not connected:
+                if was is not False:
+                    log.warning("Speaker %s not connected; trying to reconnect", mac)
+                await run("bluetoothctl", "connect", mac)
+                _, info = await run("bluetoothctl", "info", mac)
+                connected = bool(re.search(r"Connected:\s*yes", info))
+            if connected:
+                _, sinks = await run("pactl", "list", "short", "sinks")
+                _, default = await run("pactl", "get-default-sink")
+                if sink not in sinks and connected != was:
+                    log.warning("Speaker is connected but has no audio output in PulseAudio "
+                                "(another session may have claimed it, e.g. the login screen)")
+                if sink in sinks and default.strip() != sink:
+                    await run("pactl", "set-default-sink", sink)
+                    log.info("Speaker set as default output")
+            if connected != was:
+                log.info("Speaker %s", "connected" if connected else "still not connected (is it on?)")
+                was = connected
+            await asyncio.sleep(20 if connected else 30)
 
     async def _on_camera_fall(self, msg):
         """The camera thinks someone fell: stop moving, alert the caregiver, talk to them."""
