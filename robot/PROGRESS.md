@@ -220,3 +220,9 @@
   requests to raise it (tried: it snaps back). With the voice at 60% on top, Rosey was inaudible.
   Now: ROSEY_TTS_VOLUME=100 (agent.env), the keeper logs the speaker level and the website shows
   "connected, volume N%" (with "press + on the speaker" below 40%).
+- Real cause of the silence: a user service `jlab-volume-cap` (~/.local/bin/jlab-volume-cap,
+  added 2026-11-14 18:54, not by the Rosey project) sets the JLab speaker to 18% on every
+  connect and caps it at 50%. Not changed yet: waiting for the user's OK to stop/raise it.
+  (AVRCP absolute volume was a false lead; reverted.)
+- Follow mode now backs up: person box wider than 58% of the frame -> reverse in 0.3 s bursts
+  at 0.75 until below 48%; at most 6 bursts per 10 s since the camera can't see behind.

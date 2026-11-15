@@ -81,3 +81,29 @@ def test_stuck_when_view_frozen():
     img = paint(frame(), (290, 40, 350, 350), (0, 0, 200))
     states = [fol.step(img.copy(), [person(290, 350)], now=t / 10).state for t in range(0, 30)]
     assert "stuck" in states
+
+
+def test_very_close_person_backs_up_in_short_bursts():
+    img = paint(frame(), (100, 40, 540, 350), (0, 0, 200))        # 69% of the width
+    out = rf.Follower().step(img, [person(100, 540)], now=0)
+    assert out.left < 0 and out.right < 0 and out.left == out.right
+    assert abs(out.left) <= 1.0 and 0 < out.pulse_s <= 0.5
+
+
+def test_backing_stops_once_they_step_back():
+    fol = rf.Follower()
+    img = paint(frame(), (100, 40, 540, 350), (0, 0, 200))
+    fol.step(img, [person(100, 540)], now=0)
+    # 45%: still close (no forward), but below BACK_DONE_W: stop backing
+    img2 = paint(frame(), (176, 40, 464, 350), (0, 0, 200))
+    out = fol.step(img2, [person(176, 464)], now=0.5)
+    assert out.state == "arrived" and not out.moving
+
+
+def test_backing_is_limited_because_it_cannot_see_behind():
+    fol = rf.Follower()
+    img = paint(frame(), (100, 40, 540, 350), (0, 0, 200))
+    outs = [fol.step(img, [person(100, 540)], now=i * 0.5) for i in range(rf.BACK_MAX_PULSES + 3)]
+    backs = [o for o in outs if o.left < 0]
+    assert len(backs) == rf.BACK_MAX_PULSES
+    assert not outs[-1].moving

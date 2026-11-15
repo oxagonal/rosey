@@ -15,7 +15,8 @@ Obstacle avoidance (camera only, so best-effort):
     the robot's path block forward driving; ones off to a side steer it away;
   * "stuck" check: driving forward but the floor area of the image isn't changing
     means the wheels are pushing against something, so it stops for a few seconds;
-  * it never drives backwards and stops when the person is close.
+  * it stops when the person is close, and backs away in short, slow bursts if they
+    come much closer (it can't see behind itself, so backing is limited; see BACK_*).
 
 Conventions: frame x grows to the right. TURN_INVERT matches follow.py (on this
 robot drive(+L, -R) turns away from the person, found in a live test).
@@ -41,6 +42,12 @@ STEER_GAIN = 0.6           # how hard to steer while driving forward
 MIN_WHEEL = 0.70           # below this the TT motors hum or crawl (manual 100% works best)
 ARRIVE_W = 0.34            # person box width (fraction of frame) at which we stop
 GO_W = 0.26                # ... and start following again (hysteresis)
+BACK_W = 0.58              # person box wider than this = too close: back away
+BACK_DONE_W = 0.48         # ... until they're back below this width
+BACK_SPEED = 0.75          # reverse wheel speed (TT motors need ~0.7 to move)
+BACK_PULSE_S = 0.3         # back up in short bursts, then stop and look again
+BACK_MAX_PULSES = 6        # blind to what's behind: at most this many bursts...
+BACK_WINDOW_S = 10.0       # ... per this many seconds, then just wait
 LOST_AFTER_S = 0.6         # no match for this long -> stop
 MATCH_SIM = 0.55           # clothing-colour similarity needed to re-find the person
 OBSTACLE_SCORE = 0.40
@@ -109,6 +116,8 @@ class Follower:
         self.prev_floor: Optional[np.ndarray] = None
         self.floor_moved_at = 0.0
         self.off = None               # smoothed horizontal offset of the person
+        self.backing = False
+        self.back_times: List[float] = []   # when recent backing bursts started
 
     # -- target tracking ---------------------------------------------------------
     def _track(self, img, people, now) -> Optional[Box]:
@@ -201,6 +210,10 @@ class Follower:
         off = raw_off if self.off is None else 0.5 * self.off + 0.5 * raw_off
         self.off = off
         width = (x2 - x1) / w
+        if width >= BACK_W:
+            self.backing = True
+        elif width < BACK_DONE_W:
+            self.backing = False
         if width >= ARRIVE_W:
             self.arrived = True
         elif width < GO_W:
@@ -218,6 +231,19 @@ class Follower:
             s = max(MIN_WHEEL, TURN_SPEED)   # turns always at full power; the speed slider only limits forward speed
             out.left, out.right = turn * s, -turn * s
             out.state, out.detail = "following", "turning toward them"
+            return out
+
+        if self.backing:
+            # They came closer: give them room with a short reverse burst, then look again.
+            self.forward_since = None
+            self.back_times = [t for t in self.back_times if now - t < BACK_WINDOW_S]
+            if len(self.back_times) >= BACK_MAX_PULSES:
+                out.state, out.detail = "arrived", "very close; backed up as far as is safe for now"
+                return out
+            self.back_times.append(now)
+            out.pulse_s = BACK_PULSE_S
+            out.left = out.right = -max(MIN_WHEEL, BACK_SPEED)
+            out.state, out.detail = "following", "backing up to give them room"
             return out
 
         if self.arrived:
